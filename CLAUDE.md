@@ -69,7 +69,10 @@ was meant to close stays open. Every step works and the result is zero.
 Do not build these unless asked directly:
 
 - CAD integration
-- Task management / kanban
+- Task management / kanban — still out. Note this is *not* the same as the work
+  spans in `core/progress.py`, which are *derived* from captured entries
+  (who was on what, when) and are read-only. Out means: creating a task by
+  command, assignment, owners, due dates, "mark done". Nothing a human can edit.
 - Parts inventory
 - Match/competition data analysis
 - Multi-team permissions or auth systems
@@ -110,6 +113,7 @@ DiscordFTCAgent/
 │   ├── triage.py              # is this worth a call at all?
 │   ├── inbox.py               # burst coalescing
 │   ├── followup.py            # merge gate + multi-round stop policy
+│   ├── progress.py            # who is on what, derived — see docs/design/
 │   ├── pipeline.py            # ingest policy — the only caller of all of core
 │   ├── storage.py             # memory: postgres + pgvector
 │   └── prompts/               # kept out of .py on purpose — see §8
@@ -398,6 +402,9 @@ Working and verified locally:
   append-only `FollowupTurn` ledger.
 - **`core/followup.py`** — `PATCHABLE_FIELDS`, merge gate, thread gaps, and the
   multi-round stop policy. Pure logic covered by `tests/test_core.py`.
+- **`core/progress.py`** — per-person work spans, derived from entries with no
+  extra model call. Two consumers: `pipeline._question_for`'s one-question-
+  per-task gate and the notebook's session timeline. Pure and unit-tested.
 - **`core/agent.py`** — all three entry points. API connectivity is fine; the
   §6 wiring works.
 - **three prompts** in `core/prompts/`
@@ -449,6 +456,10 @@ Two findings worth keeping:
 
 ### Known defects
 
+- `TASK_IDLE_MINUTES` (default 60) has never been measured against real channel
+  history. Too small fragments one task into five spans; too large collapses a
+  whole meeting into one. Settle it the way §9 settles everything else — with
+  real messages, not invented ones.
 - `session_log.md` normalises the team's wording slightly ("adding compliant
   wheels" → "compliant wheels"), a mild violation of hard rule 3. Tunable, but
   not before real transcripts replace the invented baseline.

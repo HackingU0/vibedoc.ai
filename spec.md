@@ -22,6 +22,7 @@ flowchart TB
         pipeline["core/pipeline.py<br/>Ingest and reply policy"]
         triage["core/triage.py<br/>Cheap pre-filter"]
         followup["core/followup.py<br/>Merge and stop gates"]
+        progress["core/progress.py<br/>Work spans, derived"]
         agent["core/agent.py<br/>Parse, log, and merge entry points"]
         prompts[["core/prompts/*.md<br/>Ambient, /log, and reply prompts"]]
         schema["core/schema.py<br/>Records, enums, and follow-up ledger"]
@@ -57,6 +58,7 @@ flowchart TB
     pipeline --> storage
     pipeline --> triage
     pipeline --> followup
+    pipeline --> progress
 
     agent -->|loads| prompts
     agent -->|validates output| schema
@@ -69,6 +71,7 @@ flowchart TB
     storage -.-> export_gap
     export_gap -.-> notebook
     notebook -->|reads LoggedEntry| schema
+    notebook --> progress
 
     smoke --> agent
     smoke --> schema
@@ -93,7 +96,7 @@ flowchart TB
     classDef warning fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
 
     class discord_bot,notebook adapter
-    class inbox,pipeline,triage,followup,agent,prompts,schema,storage core
+    class inbox,pipeline,triage,followup,progress,agent,prompts,schema,storage core
     class team,deepseek,postgres,embeddings,smoke,scoring,conversation_scoring,samples,conversations,tests external
     class export_gap warning
 ```
