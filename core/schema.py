@@ -130,18 +130,6 @@ class DesignRecord(BaseModel):
         return value
 
 
-# ── The four fields a follow-up is allowed to fill ────────────────────────────
-# Single source of truth: the gate in agent._apply_patch enforces this list in
-# Python, so a follow-up can never rewrite stage / summary / title even if the
-# model tries to.
-PATCHABLE_FIELDS = (
-    "problem_statement",
-    "alternatives_considered",
-    "rationale",
-    "test_evidence",
-)
-
-
 class FollowupPatch(BaseModel):
     """What a reply to the bot's follow-up question adds to an existing record.
 
@@ -187,6 +175,45 @@ class FollowupPatch(BaseModel):
         ),
     )
 
+    # ── Action: keep at the end ──────────────────────────────────────────────
+    next_question: Optional[str] = Field(
+        default=None,
+        description=(
+            "One more question, only if a genuinely important gap is still open "
+            "after this reply and the reply showed the person is willing to "
+            "answer. Same tone rules as the first question: conversational, "
+            "under 25 words, one thing only. "
+            "Return null if the reply did not answer, if it answered everything "
+            "that mattered, or if asking again would feel like nagging. "
+            "Null is the normal outcome."
+        ),
+    )
+
+
+class FollowupTurn(BaseModel):
+    """One round of the follow-up conversation: a question and its answer.
+
+    The list of these replaces the four scalar followup_* fields this envelope
+    used to carry. That shape allowed exactly one question per record forever;
+    the real shape of getting a rationale out of a teammate is two rounds
+    ("why dual roller?" / "weight" / "how much lighter?").
+
+    `filled` is the stop signal, and the reason a turn records more than the
+    text: a round that closed nothing means the question missed, and rephrasing
+    it costs goodwill the bot does not have. See core/followup.py.
+    """
+
+    question: str
+    # Set once the channel has actually posted it. It is the hook a channel uses
+    # to recognise a reply, so it is a channel fact, never a model output.
+    message_id: Optional[str] = None
+    asked_at: Optional[datetime] = None
+    answer: Optional[str] = None
+    answered_at: Optional[datetime] = None
+    # Which of PATCHABLE_FIELDS this round actually closed. Empty means the
+    # reply arrived and added nothing.
+    filled: list[str] = Field(default_factory=list)
+
 
 class LoggedEntry(BaseModel):
     """A DesignRecord plus the channel metadata around it.
@@ -217,33 +244,51 @@ class LoggedEntry(BaseModel):
     record: DesignRecord
 
     # ── Follow-up lifecycle ──────────────────────────────────────────────────
-    # followup_message_id is set once the bot has posted its question. It is the
-    # hook a channel uses to recognise a reply as an answer, and it doubles as
-    # the "already asked" flag — one question per record, never a second round.
-    followup_message_id: Optional[str] = None
-    followup_asked_at: Optional[datetime] = None
-    followup_answer: Optional[str] = None
-    followup_answered_at: Optional[datetime] = None
+    # Append-only. The last turn is the live one; everything before it is the
+    # conversation that got the record this far.
+    followups: list[FollowupTurn] = Field(default_factory=list)
+
+    @property
+    def open_followup_message_id(self) -> Optional[str]:
+        """The message id a reply must target to count as an answer.
+
+        None once the last question has been answered — otherwise later chatter
+        in the same thread would overwrite an answer that already landed.
+        """
+        if self.followups and self.followups[-1].answered_at is None:
+            return self.followups[-1].message_id
+        return None
 
     @property
     def awaiting_followup(self) -> bool:
         """Asked, not yet answered. A channel routes replies only to these."""
-        return (
-            self.followup_message_id is not None
-            and self.followup_answered_at is None
-        )
+        return self.open_followup_message_id is not None
 
     def mark_followup_asked(
-        self, message_id: str, at: Optional[datetime] = None
+        self, question: str, message_id: str, at: Optional[datetime] = None
     ) -> "LoggedEntry":
-        """Record that the bot posted its question, and under which message id.
+        """Append a round. `at` takes the channel's own event time when it has
+        one; it falls back to now so scripts and tests need not care."""
+        turn = FollowupTurn(
+            question=question,
+            message_id=message_id,
+            asked_at=at or datetime.now(timezone.utc),
+        )
+        return self.model_copy(update={"followups": [*self.followups, turn]})
 
-        `at` takes the channel's own event time when it has one; it falls back to
-        now so scripts and tests do not have to care.
-        """
-        return self.model_copy(
+    def record_followup_answer(
+        self, answer: str, filled: list[str], at: Optional[datetime] = None
+    ) -> "LoggedEntry":
+        """Close the live round. Always called when a reply arrives, even when
+        the reply added nothing — a shrug is an outcome, and it is the signal
+        that stops the next round."""
+        if not self.followups:
+            return self
+        closed = self.followups[-1].model_copy(
             update={
-                "followup_message_id": message_id,
-                "followup_asked_at": at or datetime.now(timezone.utc),
+                "answer": answer,
+                "answered_at": at or datetime.now(timezone.utc),
+                "filled": list(filled),
             }
         )
+        return self.model_copy(update={"followups": [*self.followups[:-1], closed]})

@@ -11,9 +11,15 @@ import asyncio
 from datetime import datetime, timezone
 
 from core import triage
+from core.followup import apply_patch as _apply_patch
 from core.inbox import Coalescer
-from core.agent import _apply_patch
-from core.schema import DesignRecord, FollowupPatch, LoggedEntry, Stage, Subteam
+from core.schema import (
+    DesignRecord,
+    FollowupPatch,
+    LoggedEntry,
+    Stage,
+    Subteam,
+)
 from exporters.notebook import render_notebook
 from tests.samples import SAMPLES
 
@@ -41,7 +47,14 @@ def test_patch_gate():
     assert out.followup_question is None, "one question per record"
 
     assert _apply_patch(rec, FollowupPatch(answered=False, rationale="x")) == rec
-    assert _apply_patch(rec, FollowupPatch(answered=True)) == rec
+    # A reply that answered but supplied nothing still closes the question it
+    # answered — carrying it forward would let the bot re-ask it.
+    empty = _apply_patch(rec, FollowupPatch(answered=True))
+    assert empty.missing_fields == ["rationale"] and empty.followup_question is None
+    # A patch may propose the next question; posting it is core/followup's call.
+    assert _apply_patch(rec, FollowupPatch(answered=True, rationale="lighter",
+                                           next_question="how much lighter?")
+                        ).followup_question == "how much lighter?"
     # Empty list is "nothing supplied", not "clear it".
     assert _apply_patch(R(missing_fields=["alternatives_considered"],
                           alternatives_considered=["a"]),
@@ -76,10 +89,28 @@ def test_notebook():
 
 def test_envelope():
     e = E(12, R())
-    assert not e.awaiting_followup
-    asked = e.mark_followup_asked("m1", at=datetime(2025, 10, 12, tzinfo=timezone.utc))
-    assert asked.awaiting_followup and asked.followup_asked_at.day == 12
+    assert not e.awaiting_followup and e.open_followup_message_id is None
     assert e.source == "ambient" and e.entry_id != E(13, R()).entry_id
+
+    at = datetime(2025, 10, 12, tzinfo=timezone.utc)
+    asked = e.mark_followup_asked("why dual roller?", "m1", at=at)
+    assert asked.awaiting_followup
+    assert asked.open_followup_message_id == "m1"
+    assert asked.followups[-1].question == "why dual roller?"
+    assert asked.followups[-1].asked_at.day == 12
+
+    answered = asked.record_followup_answer("it's lighter", ["rationale"], at=at)
+    assert not answered.awaiting_followup
+    # An answered question must stop routing replies, or later chatter in the
+    # thread overwrites the answer that already landed.
+    assert answered.open_followup_message_id is None
+    assert answered.followups[-1].filled == ["rationale"]
+
+    # A second round appends; it does not overwrite round one.
+    round2 = answered.mark_followup_asked("how much lighter?", "m2", at=at)
+    assert len(round2.followups) == 2
+    assert round2.open_followup_message_id == "m2"
+    assert round2.followups[0].answer == "it's lighter"
 
 
 def test_triage():

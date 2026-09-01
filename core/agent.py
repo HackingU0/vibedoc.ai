@@ -8,13 +8,8 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 
-from .schema import (
-    PATCHABLE_FIELDS,
-    DesignRecord,
-    FollowupPatch,
-    LoggedEntry,
-    apply_patch,
-)
+from .followup import PATCHABLE_FIELDS, apply_patch
+from .schema import DesignRecord, FollowupPatch, LoggedEntry
 
 load_dotenv()
 
