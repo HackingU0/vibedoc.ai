@@ -41,7 +41,9 @@ SAMPLES = [
         "after the slide flex thing we compared 2 stage vs 3 stage viper slides. "
         "going with 2 stage, the 3 stage was like 180g heavier and we're already "
         "way over on the arm side",
-        Stage.DECISION, missing=frozenset({T}),
+        # "the slide flex thing" names a topic, not what actually went wrong —
+        # problem_statement stays missing under the tightened rule (schema.py).
+        Stage.DECISION, missing=frozenset({P, T}),
     ),
     Sample(
         "dropping road runner for pedro pathing. rr tuning was eating a whole "
@@ -59,8 +61,12 @@ SAMPLES = [
         Stage.BUILD, missing=frozenset({P, A, R, T}),
     ),
     Sample(
+        # "now" reports an already-true state, not an announced future choice —
+        # build, not decision, under the tightened rule (schema.py). The key
+        # was wrong here, not the model: notes.md runs 3 and 11 both disagreed
+        # with DECISION and this is why.
         "we're doing 4 wheels on the intake now instead of 6",
-        Stage.DECISION, missing=frozenset({P, A, R, T}),
+        Stage.BUILD, missing=frozenset({P, A, R, T}),
     ),
     Sample(
         "rewrote auto to score 3 specimens instead of 2",

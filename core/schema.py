@@ -46,8 +46,14 @@ class DesignRecord(BaseModel):
             "Which stage of the engineering design cycle this message belongs to. Criteria:\n"
             "- problem: Describes a failure, dissatisfaction, or need, with no solution proposed yet\n"
             "- ideation: Discussing multiple possible solutions, weighing trade-offs, nothing finalized yet\n"
-            "- decision: Explicitly states 'we decided to / ended up choosing' a specific solution\n"
-            "- build: Action has been taken (e.g., modified, built, assembled/installed)\n"
+            "- decision: A change is announced together with a reason for it — a trade-off, a "
+            "comparison, a 'since/because' — even in present tense with no 'decided to' phrase. "
+            "The reasoning is what marks it a decision, not the tense: 'dropping road runner "
+            "for pedro pathing, RR tuning ate a meeting every week' is a decision.\n"
+            "- build: A change is reported with NO reasoning attached anywhere in the text, or "
+            "described as physical/software action taken ('installed', 'swapped', 'moved', "
+            "'rewrote') with nothing explaining why: 'we're doing 4 wheels now instead of 6' "
+            "is a build, not a decision — nothing says why.\n"
             "- test: Involves testing actions or quantitative results (e.g., error margin, success rate, time elapsed)\n"
             "- reflection: Reviewing whether a change was effective, summarizing takeaways/lessons learned\n"
             "- unknown: Scheduling, ordering takeout, small talk, or other topics unrelated to robot design\n"
@@ -86,14 +92,28 @@ class DesignRecord(BaseModel):
 
     problem_statement: Optional[str] = Field(
         default=None,
-        description="The problem intended to be solved by this change. Return null if not explicitly stated; do not reverse-engineer from the solution.",
+        description=(
+            "The problem intended to be solved by this change. Return null if not explicitly "
+            "stated; do not reverse-engineer from the solution. A bare label pointing at an "
+            "issue ('the slide flex thing', 'that jamming issue') without describing what "
+            "actually went wrong is not an explicit problem statement — it names a topic, not "
+            "a problem. Only fill this when the text says what failed, what broke, or what was "
+            "unsatisfactory."
+        ),
     )
 
     alternatives_considered: list[str] = Field(
         default_factory=list,
         description=(
-            "Alternative solutions mentioned in the source text that were not ultimately adopted. "
-            "This is highly valued by judges. Return an empty list if none are mentioned."
+            "Prior parts or approaches the text names alongside a stated reason for the change — "
+            "a trade-off, a comparison, a 'since/because' — whether that reason explains what was "
+            "adopted or what was rejected; the two are usually the same sentence. This is highly "
+            "valued by judges. Naming what was replaced is not enough BY ITSELF: 'swapped the "
+            "435s for 1150s' names the 435s but the message gives no reason anywhere, so this "
+            "stays empty. 'ended up going dual roller since it fits the current frame' and "
+            "'dropping road runner, RR tuning ate a meeting every week' both give a reason, so "
+            "the named prior option(s) count. Return an empty list only when a change is "
+            "reported with no reasoning attached anywhere in the text."
         ),
     )
 

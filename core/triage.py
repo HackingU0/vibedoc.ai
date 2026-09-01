@@ -26,7 +26,7 @@ KEYWORDS = frozenset("""
     intake slide slides arm claw grabber odometry odo auto autonomous teleop
     opmode pid pathing vision april apriltag limelight camera
     motor encoder servo gear belt chain sprocket spool bearing bushing
-    wheel wheels drivetrain chassis frame mount bracket plate standoff
+    wheel wheels roller rollers drivetrain chassis frame mount bracket plate standoff
     hang climb spec specimen sample basket bucket hook linkage fourbar
     cad print printed tolerance flex jam jammed stall slip torque rpm
     battery wiring hub expansion sensor limit switch

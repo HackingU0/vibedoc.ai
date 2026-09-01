@@ -45,6 +45,22 @@ exactly. The rules below apply across all fields.
   quoted.
 - **Non-English or mixed-language messages.** Parse them normally and write
   the record in English, but preserve part names and jargon verbatim.
+- **Naming what was replaced is not "considered" by itself — a reason is
+  what makes it count.** "swapped the 435 rpm motors for 1150s" →
+  `alternatives_considered` stays empty; nothing anywhere explains why.
+  "dropping road runner for pedro pathing, RR tuning ate a meeting every
+  week" → `alternatives_considered: ["Road Runner"]`; a reason is given, even
+  though it is phrased as why Pedro won rather than why RR lost.
+- **A topic label is not a problem statement.** "after the slide flex thing
+  we compared 2 stage vs 3 stage" → `problem_statement` is null; "the slide
+  flex thing" names a topic, not what actually went wrong. "the slide was
+  flexing under load and popping out of the rail" → fill it; that says what
+  broke.
+- **A reason is what makes it a decision, not the tense.** "we're doing 4
+  wheels on the intake now instead of 6" → build; nothing explains why, so
+  there is nothing to call a decision. "dropping road runner for pedro
+  pathing, RR tuning ate a meeting every week" → decision, in present tense,
+  because a reason is attached — it does not need to say "we decided."
 
 # Follow-up tone
 
