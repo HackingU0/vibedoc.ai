@@ -266,6 +266,14 @@ sent to the model. Write decision criteria, never tautologies.
   Deliberately *not* a `DesignRecord`, so the merge step cannot reach `stage`,
   `title` or `summary`; Python decides whether the proposed question is posted.
 
+`Contribution` is the same idea applied to a peer instead of a bot question:
+one other person's message folded into someone else's record, unprompted.
+`LoggedEntry.contributions` is its append-only ledger, parallel to
+`followups`. It reuses `FollowupPatch` as its merge output — the two are the
+same shape of problem, "does this new text add anything, and to which of the
+four patchable fields" — so no new merge-gate logic exists for it; the same
+`apply_patch` enforces the same rules either way.
+
 The merge gate is enforced in Python, not in the prompt: `apply_patch` writes
 only fields in `PATCHABLE_FIELDS` **and** only those the record itself declared
 missing. A casual reply can therefore never overwrite something the team already
@@ -309,7 +317,7 @@ messages like "software team retro on odometry tuning" unclassifiable.
 
 ## 8. Prompt design
 
-Three prompts, one schema, one model. They differ because the author's *intent*
+Four prompts, one schema, one model. They differ because the author's *intent*
 differs, which is not inferable from the text:
 
 | Prompt | Path | What is different |
@@ -317,6 +325,7 @@ differs, which is not inferable from the text:
 | `design_entry.md` | ambient | The baseline. Bias toward silence — nobody wrote this for the log. |
 | `session_log.md` | `/log` | Do **not** take the latest stage (see below). Fill fields. Ask when something is missing. |
 | `followup_merge.md` | reply | Report only what the reply adds. `answered: false` is a normal, frequent, correct outcome. |
+| `peer_merge.md` | peer message | Same shape as the reply merge, framed for an unprompted second speaker instead of an answer to a question. |
 
 The one that matters: `design_entry.md` says "if a message covers multiple
 stages, take the latest." That is right for a fragment and wrong for a write-up
@@ -416,7 +425,7 @@ Working and verified locally:
   per-task gate and the notebook's session timeline. Pure and unit-tested.
 - **`core/agent.py`** — all three entry points. API connectivity is fine; the
   §6 wiring works.
-- **three prompts** in `core/prompts/`
+- **four prompts** in `core/prompts/`
 - **`exporters/notebook.py`** — grouped by component, coverage table, gaps
   reported per thread. Pure function, ~175 lines.
 - **`core/storage.py`** — postgres + pgvector. Tested against a real pgvector
@@ -427,6 +436,10 @@ Working and verified locally:
   loops have been run against the invented fixtures; silence is 3/3 and nags 0.
 - **`tests/test_core.py`** — offline logic checks. Green.
 - **`.env.example`**
+- **Peer contributions** — a Discord Reply to a tracked message, or an
+  ordinary message on a component someone else's `core/progress` span is
+  still open on, folds into that existing entry instead of becoming a
+  disconnected one. Reuses the follow-up merge machinery unchanged.
 
 Written and checked offline, but **never run against real Discord**:
 
@@ -476,6 +489,12 @@ Two findings worth keeping:
 - `session_log.md` normalises the team's wording slightly ("adding compliant
   wheels" → "compliant wheels"), a mild violation of hard rule 3. Tunable, but
   not before real transcripts replace the invented baseline.
+- The implicit peer trigger is a heuristic (same component, sender's span not
+  idle) with no real-data validation yet — same caveat notes.md already
+  carries for `TASK_IDLE_MINUTES` itself, since this reuses that exact idle
+  window. Watch it on real channel history before trusting it broadly; it can
+  be disabled on its own (Task 4's commit) without touching the explicit
+  Reply-based trigger (Task 3), which has no such caveat.
 
 ### First live run checklist
 
