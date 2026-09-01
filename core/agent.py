@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from pydantic_ai import Agent
+from pydantic_ai import Agent, PromptedOutput
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 
@@ -19,20 +19,31 @@ FOLLOWUP_PROMPT = (_PROMPTS / "followup_merge.md").read_text(encoding="utf-8")
 SESSION_LOG_PROMPT = (_PROMPTS / "session_log.md").read_text(encoding="utf-8")
 
 _model = OpenAIChatModel(
-    os.getenv("LLM_MODEL", "deepseek-chat"),
+    os.getenv("LLM_MODEL", "deepseek-v4-flash"),
     provider=DeepSeekProvider(api_key=os.environ["LLM_API_KEY"]),
 )
 
+# deepseek-v4-flash is a thinking model: pydantic-ai's default Tool Output mode
+# forces a tool call via tool_choice, which thinking models reject outright
+# ("Thinking mode does not support this tool_choice" — CLAUDE.md §6 gotcha 3).
+# PromptedOutput asks for the schema in the prompt and parses JSON back out,
+# instead of forcing a tool call. NativeOutput (gotcha 3 fix (b)) was tried
+# first and rejected immediately: pydantic-ai has no native-structured-output
+# profile registered for this model id and raises `UserError: Native
+# structured output is not supported by this model.` before any request goes
+# out. PromptedOutput is fix (c) — most universal, slightly less reliable —
+# and keeps reasoning on, which is the whole point of this model for long
+# bursts and multi-person threads.
 _agent = Agent(
     _model,
-    output_type=DesignRecord,
+    output_type=PromptedOutput(DesignRecord),
     system_prompt=SYSTEM_PROMPT,
     retries=2,
 )
 
 _followup_agent = Agent(
     _model,
-    output_type=FollowupPatch,
+    output_type=PromptedOutput(FollowupPatch),
     system_prompt=FOLLOWUP_PROMPT,
     retries=2,
 )
@@ -42,7 +53,7 @@ _followup_agent = Agent(
 # toward silence and must not collapse to the latest stage mentioned.
 _log_agent = Agent(
     _model,
-    output_type=DesignRecord,
+    output_type=PromptedOutput(DesignRecord),
     system_prompt=SESSION_LOG_PROMPT,
     retries=2,
 )

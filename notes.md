@@ -17,6 +17,14 @@ scaled to this set). stage >= 13/15.
 | 8 | 2026-09-01 | original prompt restored; normalization retained | deepseek-chat | 12/15 | 3/3 | 9/15 |
 | 9 | 2026-09-01 | same as run 8, repeated after stochastic stage miss | deepseek-chat | 13/15 | 3/3 | 9/15 |
 | 10 | 2026-09-01 | multi-round follow-ups + thread gate + question budget | deepseek-chat | 13/15 | 3/3 | 13/15 |
+| 11 | 2026-09-01 | model swapped to deepseek-v4-flash (thinking) for long bursts / multi-person threads | deepseek-v4-flash | 13/15 | 3/3 | 13/15 |
+
+Run 11: NativeOutput (gotcha 3 fix b) failed immediately — pydantic-ai has no
+structured-output profile for this model id and raises `UserError: Native
+structured output is not supported by this model.` before any request goes
+out. Fell back to PromptedOutput (fix c). Scores held against run 10's
+baseline; the stage miss is the same known "4 wheels on the intake" ambiguity
+run 3 already logged, not a new failure from the model swap.
 
 Triage skipped 1 of 15 samples before any model call, with 0 real-stage samples
 wrongly skipped. Runs 5–6 tested prompt-only fixes for an empty-string follow-up;

@@ -163,7 +163,7 @@ structure should express the product's shape, not just today's code.
 | Language | Python 3.13 | |
 | Package manager | uv | |
 | LLM framework | pydantic-ai | Not LangGraph. This is a workflow, not a multi-step autonomous agent. |
-| Model | DeepSeek (`deepseek-chat`) | Cost. Swappable — only `core/agent.py` knows. |
+| Model | DeepSeek (`deepseek-v4-flash`, thinking) | Handles long bursts and multi-person threads. Swappable — only `core/agent.py` knows. |
 | Channel | discord.py | Capture where the team already lives |
 | Storage | PostgreSQL + pgvector | Only `core/storage.py` knows. Supabase-compatible. |
 | Embeddings | OpenAI `text-embedding-3-small` | **Optional.** DeepSeek has no embeddings endpoint — gotcha 6. |
@@ -177,14 +177,15 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 
 _model = OpenAIChatModel(
-    os.getenv("LLM_MODEL", "deepseek-chat"),
+    os.getenv("LLM_MODEL", "deepseek-v4-flash"),
     provider=DeepSeekProvider(api_key=os.environ["LLM_API_KEY"]),
 )
 ```
 
 The env var is `LLM_API_KEY`, not `DEEPSEEK_API_KEY` — the whole point of
 gotcha 5 is that getting this name wrong surfaces as a 401 nowhere near the
-mistake. All three agents in `core/agent.py` share this one model instance.
+mistake. All three agents in `core/agent.py` share this one model instance,
+each wrapping its `output_type` in `PromptedOutput(...)` — see gotcha 3, fix (c).
 
 ---
 
@@ -205,10 +206,17 @@ Error: `Thinking mode does not support this tool_choice`.
 Cause: pydantic-ai's default **Tool Output** mode forces a tool call via
 `tool_choice`; DeepSeek's thinking models reject that.
 Fixes, in order of preference:
-  a. use `deepseek-chat` (no thinking mode) — current choice
-  b. `output_type=NativeOutput(DesignRecord)`
-  c. `output_type=PromptedOutput(DesignRecord)` — most universal, slightly less reliable
-  d. disable thinking via `openai_reasoning_effort`
+  a. use `deepseek-chat` (no thinking mode) — the choice while the product only
+     had to read single messages
+  b. `output_type=NativeOutput(DesignRecord)` — needed once `deepseek-v4-flash`
+     (thinking) came in to handle long bursts and multi-person threads, but
+     pydantic-ai has no native-structured-output profile registered for this
+     model id and rejects it immediately (`UserError: Native structured output
+     is not supported by this model.`) before any request goes out
+  c. `output_type=PromptedOutput(DesignRecord)` — current choice, most
+     universal, slightly less reliable, keeps reasoning on
+  d. disable thinking via `openai_reasoning_effort` — defeats the point of a
+     thinking model, only use if (c) turns out unreliable in practice
 
 **4. ⚠️ Images silently do not work through pydantic-ai's DeepSeek path.**
 Image and document inputs are **replaced with placeholder text rather than
