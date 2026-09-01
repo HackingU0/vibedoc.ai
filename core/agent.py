@@ -13,6 +13,7 @@ from .schema import (
     DesignRecord,
     FollowupPatch,
     LoggedEntry,
+    apply_patch,
 )
 
 load_dotenv()
@@ -23,7 +24,7 @@ FOLLOWUP_PROMPT = (_PROMPTS / "followup_merge.md").read_text(encoding="utf-8")
 SESSION_LOG_PROMPT = (_PROMPTS / "session_log.md").read_text(encoding="utf-8")
 
 _model = OpenAIChatModel(
-    os.getenv("LLM_MODEL", "deepseek-v4-flash-vision-exp"),
+    os.getenv("LLM_MODEL", "deepseek-chat"),
     provider=DeepSeekProvider(api_key=os.environ["LLM_API_KEY"]),
 )
 
@@ -88,45 +89,6 @@ def _render_context(record: DesignRecord) -> str:
     )
 
 
-def _apply_patch(record: DesignRecord, patch: FollowupPatch) -> DesignRecord:
-    """Merge a patch into a record — the gate, enforced in Python.
-
-    Two guarantees the prompt alone could not give us:
-      1. only PATCHABLE_FIELDS can change, so a casual reply can never quietly
-         rewrite stage, title or summary;
-      2. only fields the record itself declared missing can be written, so the
-         reply cannot overwrite something the team already said.
-    """
-    if not patch.answered:
-        return record
-
-    allowed = set(record.missing_fields) & set(PATCHABLE_FIELDS)
-    updates: dict[str, object] = {}
-
-    for name in PATCHABLE_FIELDS:
-        if name not in allowed:
-            continue
-        value = getattr(patch, name)
-        if not value:  # None, "", or [] — all mean "nothing supplied"
-            continue
-        updates[name] = value
-
-    if not updates:
-        return record
-
-    return record.model_copy(
-        update={
-            **updates,
-            # The holes that just got filled are no longer holes.
-            "missing_fields": [
-                f for f in record.missing_fields if f not in updates
-            ],
-            # One question per record. It has been asked and answered.
-            "followup_question": None,
-        }
-    )
-
-
 async def apply_followup_answer(
     entry: LoggedEntry, answer_text: str, at: Optional[datetime] = None
 ) -> LoggedEntry:
@@ -161,5 +123,5 @@ async def apply_followup_answer(
 
     result = await _followup_agent.run(prompt)
     return entry.model_copy(
-        update={**stamp, "record": _apply_patch(entry.record, result.output)}
+        update={**stamp, "record": apply_patch(entry.record, result.output)}
     )
