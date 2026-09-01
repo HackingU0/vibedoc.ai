@@ -102,7 +102,7 @@ async def mark_asked(
 async def _question_for(entry: LoggedEntry) -> Optional[str]:
     """Should the bot say anything, and what?
 
-    Six gates, cheapest first. The default is silence — §8's rule that a
+    Seven gates, cheapest first. The default is silence — §8's rule that a
     follow-up posts publicly in a live channel is the reason every one of these
     is a veto rather than a score.
     """
@@ -118,8 +118,14 @@ async def _question_for(entry: LoggedEntry) -> Optional[str]:
     if _span_is_busy(entry, thread):
         return None                          # already interrupted this task once
 
+    since = datetime.now(timezone.utc) - BUDGET_WINDOW
+    if entry.author and await storage.count_open_followups(
+        entry.channel, since=since, author=entry.author
+    ):
+        return None                          # this person already has a question
+
     open_count = await storage.count_open_followups(
-        entry.channel, since=datetime.now(timezone.utc) - BUDGET_WINDOW
+        entry.channel, since=since
     )
     if open_count >= followup.MAX_OPEN_QUESTIONS:
         log.info("question budget reached for %s, staying quiet", entry.channel)

@@ -124,23 +124,30 @@ def _timeline(entries: list[LoggedEntry], tz: tzinfo | None = None) -> list[str]
     if not runs:
         return []
 
-    out = [
-        "## Sessions",
-        "",
-        "| Day | Who | Component | Active | Stages |",
-        "|---|---|---|---|---|",
-    ]
+    out = ["## Sessions", ""]
+    day = None
     for span in runs:
         start = span.started_at.astimezone(tz) if tz else span.started_at
         end = span.last_at.astimezone(tz) if tz else span.last_at
+        if start.date() != day:
+            if day is not None:
+                out.append("")
+            out += [
+                f"### {start.strftime('%b %d')}",
+                "",
+                "| Who | Component | Active | Stages |",
+                "|---|---|---|---|",
+            ]
+            day = start.date()
         window = start.strftime("%H:%M")
         if span.last_at != span.started_at:
-            window += f"–{end.strftime('%H:%M')}"
+            end_format = "%H:%M" if end.date() == start.date() else "%b %d %H:%M"
+            window += f"–{end.strftime(end_format)}"
         # dict.fromkeys dedupes while keeping the order it happened in.
         arc = " → ".join(dict.fromkeys(s.value for s in span.stages))
         out.append(
-            f"| {_date(span.started_at, tz)} | {span.author or '—'} "
-            f"| {span.component or UNFILED} | {window} | {arc} |"
+            f"| {span.author or '—'} | {span.component or UNFILED} "
+            f"| {window} | {arc} |"
         )
     out.append("")
     return out

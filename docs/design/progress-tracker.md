@@ -3,8 +3,10 @@
 **Status:** implemented. `core/progress.py` plus the two consumers named in §9
 are in the tree; the open questions in §12 are still open. Built by
 `docs/superpowers/plans/2026-09-01-progress-tracker.md`, which corrects two
-details of this document — no storage change was needed, and the follow-up gate
-carries no scoring harness because it involves no model behaviour.
+details of this document — no span-specific storage read was needed, and the
+follow-up gate carries no scoring harness because it involves no model
+behaviour. A later review added author scoping to the existing open-follow-up
+count; no table or span persistence was added.
 
 **One sentence:** give the agent a per-person, time-ordered view of what the
 team is working on — derived entirely from entries it has already captured, at
@@ -51,9 +53,10 @@ promised.
 1. **Follow-up timing.** The product's largest risk is the bot getting muted
    (§7, §8). Today the ask/stay-silent decision knows the record, the design
    thread, and a channel-wide count budget — but it does not know whether the
-   person is mid-flow. A span supplies the only budget that means something:
-   **at most one question per task**, asked when the task is over rather than
-   while someone is elbow-deep in it.
+   person is mid-flow. A span supplies a budget that means something: **at most
+   one question per task**. An author-scoped open-question check complements it
+   so overlapping component spans cannot give one person several questions at
+   once.
 2. **The notebook's timeline.** "Tuesday 7:12–9:03pm · intake · problem →
    build → test" is what a notebook page actually is. §1 claims the notebook
    falls out of good process capture; a task timeline is the missing half.
@@ -92,8 +95,8 @@ class Span:
     started_at: datetime          # first entry's created_at
     last_at: datetime             # last entry's created_at — never "now"
     ended_at: Optional[datetime]  # == last_at once closed; None while open
-    entry_ids: list[str]
-    stages: list[Stage]           # the arc, in the order it happened
+    entry_ids: tuple[str, ...]
+    stages: tuple[Stage, ...]     # the arc, in the order it happened
 ```
 
 A dataclass, not a `BaseModel`: a span is never persisted, never serialised to
@@ -188,8 +191,8 @@ around. It only needs to be stated so nobody builds a timesheet on top of it.
 | File | Change | Size |
 |---|---|---|
 | `core/progress.py` | **Create.** `Span`, `spans()`, `current()` | ~60 lines |
-| `core/storage.py` | Add a `channel` filter to `list_entries` | 2 lines |
-| `core/pipeline.py` | The once-per-span follow-up gate (phase 2) | ~10 lines |
+| `core/storage.py` | Optional author scope on `count_open_followups` | ~5 lines |
+| `core/pipeline.py` | Per-span and per-author follow-up gates (phase 2) | ~20 lines |
 | `exporters/notebook.py` | A session timeline section (phase 3) | ~30 lines |
 | `tests/test_core.py` | `test_spans()` — pure, no DB, no API | ~40 lines |
 
@@ -198,9 +201,10 @@ Layering holds: `core/progress.py` imports only `schema`, and takes
 rule `exporters/notebook.py` follows, and for the same reason (§11): "export
 only this channel" then becomes a caller-side query instead of a change here.
 
-`storage.list_entries` gains a `channel` filter rather than a new function,
-because it already has the `since` / `until` / `subteam` / `source` filter
-machinery and one more clause is cheaper than a second read path.
+No span-specific storage read exists. `pipeline._question_for` reuses its
+channel- and component-scoped `list_thread` rows for the span gate. The
+per-author gate adds an optional author condition to the existing
+`count_open_followups` query instead of introducing a second read path.
 
 ---
 
@@ -208,24 +212,32 @@ machinery and one more clause is cheaper than a second read path.
 
 ### Phase 2 — the follow-up gate (the reason to build this)
 
-`pipeline._question_for` gains one gate: **if any entry in the asker's current
-span already carries a follow-up, stay silent.**
+`pipeline._question_for` gains two breadth gates:
 
-This is a strictly better budget than the current channel-wide count, because
-"one question per task" is semantically meaningful where "two questions per 12
-hours" is a guess. Note it does *not* replace the count budget in the same
-change — §9's one-change-per-run discipline says land it alongside, measure,
-and only then consider relaxing the older gate.
+1. If any other entry in the asker's current span carries a follow-up, stay
+   silent. The current entry is excluded so productive multi-round depth still
+   works.
+2. If the same author already has an unanswered question in the channel, stay
+   silent even when the new entry belongs to another component span.
 
-Measured by a new `try_conversation.py` metric: **questions per span**, which
-must be ≤ 1.
+These are stricter and more meaningful than the channel-wide count alone:
+"one question per task" limits repeated interruption, while "one unanswered
+question per person" covers people working across overlapping components. They
+do *not* replace the count budget yet; measure real channel history before
+relaxing the older gate.
+
+No scoring harness measures these deterministic vetoes: the existing
+conversation fixtures contain one entry per span and would report a perfect
+number by construction. Whether the gates are too quiet needs real channel
+history, not more invented model calls.
 
 ### Phase 3 — the notebook timeline
 
-A per-day section listing spans in time order, with the stage arc per span. A
-span whose arc is `build, build, build` with no `problem` is a visible gap at
-exactly the granularity a judge reads — narrower than `thread_gaps`, which
-spans the whole season.
+A per-day section lists spans in time order, with the stage arc per span. A
+cross-midnight window includes the ending date so `23:40–00:20` never looks
+backwards. A span whose arc is `build, build, build` with no `problem` is a
+visible gap at exactly the granularity a judge reads — narrower than
+`thread_gaps`, which spans the whole season.
 
 ### Enabled, not built
 
@@ -285,8 +297,8 @@ Recorded rather than guessed at:
 3. **Should a `reflection` entry close a span early?** "that fixed it" is a
    plausible end-of-task signal. Unproven — do not build it until real history
    shows spans visibly running past their real end.
-4. **Does the once-per-span gate make the count budget dead weight?** Probably.
-   Measure before deleting.
+4. **Do the per-span and per-author gates make the global count budget dead
+   weight?** Probably. Measure before deleting.
 
 ---
 

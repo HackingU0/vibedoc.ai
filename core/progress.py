@@ -20,7 +20,7 @@ See docs/design/progress-tracker.md §2 for the line against CLAUDE.md §3.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Optional
 
@@ -61,8 +61,8 @@ class Span:
     started_at: datetime
     last_at: datetime
     ended_at: Optional[datetime]
-    entry_ids: list[str] = field(default_factory=list)
-    stages: list[Stage] = field(default_factory=list)
+    entry_ids: tuple[str, ...] = ()
+    stages: tuple[Stage, ...] = ()
 
     @property
     def is_open(self) -> bool:
@@ -120,8 +120,8 @@ def spans(
                     started_at=group[0].created_at,
                     last_at=last_at,
                     ended_at=last_at if now - last_at > idle else None,
-                    entry_ids=[e.entry_id for e in group],
-                    stages=[e.record.stage for e in group],
+                    entry_ids=tuple(e.entry_id for e in group),
+                    stages=tuple(e.record.stage for e in group),
                 )
             )
     return sorted(out, key=lambda s: s.started_at)

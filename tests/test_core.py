@@ -304,7 +304,8 @@ def test_spans():
     assert got[0].started_at == base
     assert got[0].last_at == base + timedelta(minutes=10)
     assert got[0].is_open, "last activity is well inside the idle window"
-    assert got[0].stages == [Stage.BUILD, Stage.BUILD]
+    assert got[0].stages == (Stage.BUILD, Stage.BUILD)
+    hash(got[0])
 
     # Three hours apart is two separate pieces of work.
     got = spans([at(0), at(180)], now=base + timedelta(minutes=200), idle=idle)
@@ -395,14 +396,68 @@ def test_notebook_timeline():
             record=R(component="intake", stage=stage),
         )
 
-    md = render_notebook([at(0, Stage.PROBLEM), at(20, Stage.BUILD)])
+    md = render_notebook([
+        at(0, Stage.PROBLEM),
+        at(20, Stage.BUILD),
+        at(24 * 60, Stage.TEST),
+    ])
 
     assert "## Sessions" in md
-    assert "| Oct 07 | ann | intake | 19:00–19:20 | problem → build |" in md
+    assert "### Oct 07" in md and "### Oct 08" in md
+    assert md.count("| Who | Component | Active | Stages |") == 2
+    assert "| ann | intake | 19:00–19:20 | problem → build |" in md
     # A window, never a duration. A span is the stretch the work was TALKED
     # about; someone can machine a part for two hours in silence. Printing
     # "20 min" would be a timesheet built on chat noise.
     assert "20 min" not in md and "0:20" not in md
+
+    late = base.replace(hour=23, minute=40)
+    midnight = render_notebook([
+        LoggedEntry(
+            raw_text="x",
+            author="ann",
+            created_at=late,
+            record=R(component="intake", stage=Stage.PROBLEM),
+        ),
+        LoggedEntry(
+            raw_text="x",
+            author="ann",
+            created_at=late + timedelta(minutes=40),
+            record=R(component="intake", stage=Stage.BUILD),
+        ),
+    ])
+    assert "| ann | intake | 23:40–Oct 08 00:20 | problem → build |" in midnight
+
+
+def test_author_question_gate():
+    from core.pipeline import _question_for
+
+    entry = LoggedEntry(
+        raw_text="x",
+        author="ann",
+        created_at=datetime(2025, 10, 7, 19, 5, tzinfo=timezone.utc),
+        record=R(
+            component="slide",
+            missing_fields=["rationale"],
+            followup_question="why?",
+        ),
+    )
+    calls = []
+
+    async def list_thread(channel, component):
+        return [entry]
+
+    async def count_open(channel, *, since, author=None):
+        calls.append(author)
+        return int(author == "ann")
+
+    async def scenario():
+        with patch.object(storage, "list_thread", new=list_thread), \
+                patch.object(storage, "count_open_followups", new=count_open):
+            assert await _question_for(entry) is None
+
+    asyncio.run(scenario())
+    assert calls == ["ann"]
 
 
 if __name__ == "__main__":

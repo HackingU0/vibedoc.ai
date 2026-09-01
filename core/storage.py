@@ -278,18 +278,22 @@ async def list_thread(
     return [_to_entry(r) for r in reversed(rows)]
 
 
-async def count_open_followups(channel: str, *, since: datetime) -> int:
-    """How many questions this channel is still waiting on.
+async def count_open_followups(
+    channel: str, *, since: datetime, author: Optional[str] = None
+) -> int:
+    """How many questions this channel, or one author in it, is waiting on.
 
     The bot asking six things during one meeting is how it gets muted in week
-    one, so this is a hard budget rather than a heuristic.
+    one. The optional author scope also stops one person who touches several
+    components from receiving several questions at once.
     """
     async with (await pool()).acquire() as conn:
         return await conn.fetchval(
             """SELECT count(*) FROM entries
                WHERE channel = $1 AND created_at >= $2
-                 AND open_followup_message_id IS NOT NULL""",
-            channel, since,
+                 AND open_followup_message_id IS NOT NULL
+                 AND ($3::text IS NULL OR author = $3)""",
+            channel, since, author,
         )
 
 

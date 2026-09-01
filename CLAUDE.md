@@ -293,8 +293,9 @@ messages like "software team retro on odometry tuning" unclassifiable.
 - Follow-ups may run up to `FOLLOWUP_MAX_ROUNDS` rounds, and stop at the first
   of: nothing patchable left, a reply that did not answer, a round that filled
   nothing, the component thread already supplying the field, or the channel's
-  open-question budget. Every gate is Python (`core/followup.py` and
-  `core/pipeline.py`), not prompt.
+  open-question budget. A separate breadth gate stays silent when the same
+  author already has an unanswered question, even on another component. Every
+  gate is Python (`core/followup.py` and `core/pipeline.py`), not prompt.
 
 ---
 
