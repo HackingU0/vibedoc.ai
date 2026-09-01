@@ -142,6 +142,15 @@ def test_silence_normalization():
     assert R(followup_question="").followup_question is None
     assert R(followup_question="null").followup_question is None
 
+    # A live run had DeepSeek emit the literal string "null" for
+    # FollowupPatch.next_question, which had no normalizer of its own. It
+    # merged straight through apply_patch (which uses model_copy and so never
+    # re-validates) and got posted to the channel as a question reading "null".
+    patch = FollowupPatch(answered=True, rationale="lighter", next_question="null")
+    assert patch.next_question is None
+    merged = _apply_patch(R(missing_fields=["rationale"]), patch)
+    assert merged.followup_question is None
+
 
 def test_legacy_missing_fields():
     record = R(missing_fields=["rationale"]).model_dump(mode="json")

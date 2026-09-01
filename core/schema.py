@@ -5,6 +5,18 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+
+def _normalize_silence(value):
+    """DeepSeek sometimes emits the literal string "null" instead of JSON
+    null for an "optional, silence-preferred" field. Shared by every field
+    where a model literally saying "null" must read as staying silent, not as
+    a question titled "null" — see DesignRecord.followup_question and
+    FollowupPatch.next_question below."""
+    if isinstance(value, str) and value.strip().lower() in {"", "null"}:
+        return None
+    return value
+
+
 class Stage(str, Enum):
     PROBLEM = "problem"
     IDEATION = "ideation"
@@ -133,9 +145,7 @@ class DesignRecord(BaseModel):
     @field_validator("followup_question", mode="before")
     @classmethod
     def normalize_silence(cls, value):
-        if isinstance(value, str) and value.strip().lower() in {"", "null"}:
-            return None
-        return value
+        return _normalize_silence(value)
 
     @field_validator("missing_fields", mode="before")
     @classmethod
@@ -206,6 +216,11 @@ class FollowupPatch(BaseModel):
             "Null is the normal outcome."
         ),
     )
+
+    @field_validator("next_question", mode="before")
+    @classmethod
+    def normalize_silence(cls, value):
+        return _normalize_silence(value)
 
 
 class FollowupTurn(BaseModel):
