@@ -127,6 +127,22 @@ async def ingest(
                 return await _respond(merged)
 
     record = await (log_session if source == "log" else parse_design_record)(raw_text)
+
+    # Implicit peer signal: nobody replied to anybody, but someone else's work
+    # on this exact component has not gone idle. A new message about it is
+    # more likely joining that work than starting its own.
+    if source == "ambient" and author and record.component:
+        target = await _find_open_peer_thread(
+            channel, record.component, author, created_at
+        )
+        if target:
+            merged = await apply_peer_contribution(
+                target, author, raw_text, at=created_at
+            )
+            if merged is not target:
+                await storage.save(merged)
+                return await _respond(merged)
+
     entry = LoggedEntry(
         channel=channel,
         source=source,
@@ -226,6 +242,31 @@ def _span_is_busy(entry: LoggedEntry, thread: list[LoggedEntry]) -> bool:
         others = set(span.entry_ids) - {entry.entry_id}
         return any(e.entry_id in others and e.followups for e in thread)
     return False
+
+
+async def _find_open_peer_thread(
+    channel: str, component: str, author: str, now: datetime
+) -> Optional[LoggedEntry]:
+    """Is someone ELSE still mid-task on this component right now?
+
+    Reuses the exact "still live" test _span_is_busy already relies on — no
+    new time constant, no second guess about what "recent" means alongside
+    TASK_IDLE_MINUTES. If more than one other author has an open span here,
+    the most recently active one wins; ties are not expected to matter enough
+    to resolve deterministically beyond that.
+    """
+    thread = await storage.list_thread(channel, component)
+    candidates = [
+        s for s in progress.spans(thread, now=now)
+        if s.author != author and s.is_open
+    ]
+    if not candidates:
+        return None
+    target_span = max(candidates, key=lambda s: s.last_at)
+    return next(
+        (e for e in reversed(thread) if e.entry_id in target_span.entry_ids),
+        None,
+    )
 
 
 async def status(*, channel: str, author: Optional[str]) -> Status:

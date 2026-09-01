@@ -598,9 +598,55 @@ def test_explicit_peer_merge_routing():
     asyncio.run(scenario("nonexistent", "bo", must_not_merge, AsyncMock(return_value=R())))
 
 
+def test_implicit_peer_merge_routing():
+    from core import pipeline
+    from unittest.mock import AsyncMock
+
+    now = datetime.now(timezone.utc)
+    ann_recent = LoggedEntry(
+        raw_text="x", author="ann", created_at=now - timedelta(minutes=5),
+        record=R(component="intake", missing_fields=["rationale"]),
+    )
+    ann_stale = LoggedEntry(
+        raw_text="x", author="ann", created_at=now - timedelta(hours=3),
+        record=R(component="intake", missing_fields=["rationale"]),
+    )
+
+    async def scenario(thread, author, component, patched_merge):
+        with patch.object(storage, "list_thread",
+                           new=AsyncMock(return_value=thread)), \
+             patch.object(storage, "count_open_followups", new=AsyncMock(return_value=0)), \
+             patch.object(storage, "save", new=AsyncMock(side_effect=lambda e, **kw: e)), \
+             patch.object(pipeline, "apply_peer_contribution", new=patched_merge), \
+             patch.object(pipeline, "parse_design_record",
+                           new=AsyncMock(return_value=R(component=component))):
+            return await pipeline.ingest(
+                channel="discord", author=author, created_at=now,
+                raw_text="try dual roller",
+            )
+
+    # ann's span on intake is still live (5 min ago, default 60-min idle):
+    # bo's message about intake should merge into it, not become its own row.
+    merged = ann_recent.model_copy(update={"record": R(component="intake", rationale="x")})
+    result = asyncio.run(scenario([ann_recent], "bo", "intake", AsyncMock(return_value=merged)))
+    assert result.entry is merged
+
+    # ann's span went stale hours ago: too old to call this "joining" her
+    # work — falls through and creates bo's own entry instead.
+    async def must_not_merge(*a, **kw):
+        raise AssertionError("a stale span must not be treated as still live")
+    result = asyncio.run(scenario([ann_stale], "bo", "intake", must_not_merge))
+    assert result.entry.author == "bo" and result.entry.record.component == "intake"
+
+    # Same person posting again is not a peer joining themselves.
+    result = asyncio.run(scenario([ann_recent], "ann", "intake", must_not_merge))
+    assert result.entry.author == "ann"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
             fn()
             print(f"ok  {name}")
+
 
