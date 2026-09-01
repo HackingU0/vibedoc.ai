@@ -48,10 +48,10 @@ ambient   any message in the channel   ┐
 /log      a deliberate write-up        ├→ classify into design-cycle stage
                                        │  → extract structured record
                                        │  → detect what's missing
-                                       │  → ask one follow-up (or stay silent)
+                                       │  → ask a follow-up (or stay silent)
                                        │  → persist
 reply     an answer to the bot's       ┘
-          question                     → merge back into the record it came from
+          question                     → merge back, then maybe ask the next gap
 
                                        → export to notebook markdown
 ```
@@ -107,6 +107,10 @@ DiscordFTCAgent/
 ├── core/                      # the heart — channel-agnostic
 │   ├── schema.py              # the contract: DesignRecord / LoggedEntry / FollowupPatch
 │   ├── agent.py               # the brain: three entry points, one model
+│   ├── triage.py              # is this worth a call at all?
+│   ├── inbox.py               # burst coalescing
+│   ├── followup.py            # merge gate + multi-round stop policy
+│   ├── pipeline.py            # ingest policy — the only caller of all of core
 │   ├── storage.py             # memory: postgres + pgvector
 │   └── prompts/               # kept out of .py on purpose — see §8
 │       ├── design_entry.md    # ambient
@@ -114,18 +118,20 @@ DiscordFTCAgent/
 │       └── followup_merge.md  # reply
 │
 ├── channels/                  # entry points from the outside world
-│   └── discord_bot.py         # ears and mouth only — 110 lines, one file
+│   └── discord_bot.py         # ears and mouth only
 │
 ├── exporters/                 # outputs — notebook is only the first one
 │   └── notebook.py            # list[LoggedEntry] -> markdown, pure
 │
 ├── tests/
 │   ├── test_core.py           # pure-logic checks, no API, no DB
-│   └── samples.py             # (todo) 15 real messages — see §9
+│   ├── samples.py             # 15 invented scoring messages — replace with real ones
+│   └── conversations.py       # multi-message, multi-round fixtures
 │
 ├── scripts/
 │   ├── Smoke.py               # connectivity check: ambient + reply paths
-│   ├── try_parse.py           # (todo) scoring harness over samples.py
+│   ├── try_parse.py           # scoring harness over samples.py
+│   ├── try_conversation.py    # rounds + nags
 │   └── export.py              # (todo) storage -> notebook, ten lines
 │
 ├── data/                      # gitignored
@@ -244,10 +250,11 @@ sent to the model. Write decision criteria, never tautologies.
   (`created_at`, `author`, `channel_message_id`, `source`, follow-up state).
   Never shown to the model. A timestamp is a fact the channel knows, not
   something to extract — let the model near dates and it will invent them.
-- `FollowupPatch` — what a reply adds. Deliberately *not* a `DesignRecord`, so
-  the merge step cannot reach `stage`, `title` or `summary` at all.
+- `FollowupPatch` — what a reply adds and the next question it proposes.
+  Deliberately *not* a `DesignRecord`, so the merge step cannot reach `stage`,
+  `title` or `summary`; Python decides whether the proposed question is posted.
 
-The merge gate is enforced in Python, not in the prompt: `_apply_patch` writes
+The merge gate is enforced in Python, not in the prompt: `apply_patch` writes
 only fields in `PATCHABLE_FIELDS` **and** only those the record itself declared
 missing. A casual reply can therefore never overwrite something the team already
 said, however the model behaves.
@@ -279,6 +286,11 @@ messages like "software team retro on odometry tuning" unclassifiable.
   nonsense ("what should this change be called?").
 - `followup_question` must be explicitly permitted to return null. The model
   needs the *right to stay silent* or the bot gets muted by the team in a week.
+- Follow-ups may run up to `FOLLOWUP_MAX_ROUNDS` rounds, and stop at the first
+  of: nothing patchable left, a reply that did not answer, a round that filled
+  nothing, the component thread already supplying the field, or the channel's
+  open-question budget. Every gate is Python (`core/followup.py` and
+  `core/pipeline.py`), not prompt.
 
 ---
 
@@ -327,9 +339,11 @@ Prompt language must match the team's actual Discord language. Do not mix.
 
 The order matters and was chosen deliberately:
 
-1. **`tests/samples.py` first** — 15 real Discord messages with hand-written
-   expected answers. Written *before* the schema, so fields are derived from
-   what messages actually contain rather than from imagination.
+1. **`tests/samples.py` first** — the target is 15 real Discord messages with
+   hand-written expected answers. The current fixture is invented and is only
+   a smoke-level baseline; replace it before trusting scores. Samples come
+   *before* the schema, so fields are derived from what messages actually
+   contain rather than from imagination.
    Composition: 3 complete decisions, 4 result-without-reason, 3
    complaint-without-solution, 2 with test data, **3 pure chitchat**.
    The chitchat samples are the product's survival line.
@@ -362,26 +376,28 @@ gives no direction while three separate numbers do:
 - Log every version's score in `notes.md`.
 - If the score drops, roll back — no "but this version is theoretically better."
 
-**Ship gates:** chitchat silence must be **15/15** (non-negotiable). Stage
-accuracy ≥13/15. Follow-up quality is judged by reading it aloud — it should
-sound like a teammate.
+**Ship gates:** chitchat silence must be **3/3 on the current fixture**
+(non-negotiable). Stage accuracy ≥13/15. Follow-up quality is judged by reading
+it aloud — it should sound like a teammate.
 
 ### The other tests
 
 `python -m tests.test_core` — pure logic, no API, no DB, no framework. Covers
-the merge gate, the notebook's per-thread gap rule, and the envelope. Run it
-after touching `_apply_patch` or `exporters/`; it is the regression lock on the
-per-thread bug in §10. It says nothing about prompt quality — that is what the
-scoring loop above is for.
+the merge and stop gates, per-thread gaps, the envelope, triage, coalescing, and
+optional-embedding failure boundaries. Run it after touching `apply_patch`,
+`exporters/`, or ingest policy. It says nothing about prompt quality — that is
+what the scoring loops are for.
 
 ---
 
 ## 10. Current status
 
-Working and verified end to end:
+Working and verified locally:
 
-- **`core/schema.py`** — `DesignRecord`, `LoggedEntry`, `FollowupPatch`,
-  `PATCHABLE_FIELDS`
+- **`core/schema.py`** — `DesignRecord`, `LoggedEntry`, `FollowupPatch`, and the
+  append-only `FollowupTurn` ledger.
+- **`core/followup.py`** — `PATCHABLE_FIELDS`, merge gate, thread gaps, and the
+  multi-round stop policy. Pure logic covered by `tests/test_core.py`.
 - **`core/agent.py`** — all three entry points. API connectivity is fine; the
   §6 wiring works.
 - **three prompts** in `core/prompts/`
@@ -391,18 +407,24 @@ Working and verified end to end:
   container: idempotent schema, upsert, follow-up lookup, redelivery dedup, all
   filters, vector search, and DB → notebook end to end.
 - **`scripts/Smoke.py`** — runs the ambient and reply paths
-- **`tests/test_core.py`** — merge gate, notebook gap rule, envelope. Green.
+- **`scripts/try_parse.py`** and **`scripts/try_conversation.py`** — scoring
+  loops have been run against the invented fixtures; silence is 3/3 and nags 0.
+- **`tests/test_core.py`** — offline logic checks. Green.
 - **`.env.example`**
 
-Written but **never run against real Discord**:
+Written and checked offline, but **never run against real Discord**:
 
-- **`channels/discord_bot.py`** — one file, 110 lines. `on_message` routes
-  reply → ambient; `/log` opens a modal. Both entry points share one
-  `_persist_and_reply`. Imports and type-checks; that is all that has been
-  verified. Everything about the live path — intents, command sync, modal
-  timeout, reply resolution — is untested until it runs in a real server.
+- **`core/pipeline.py`**, **`core/inbox.py`**, and **`core/triage.py`** — the
+  ingest policy, burst coalescer, thread gate, and open-question budget. Their
+  pieces have tests or real-DB checks, but timing and policy have not run under
+  real Discord traffic.
+- **`channels/discord_bot.py`** — `on_message` sends ambient bursts through the
+  coalescer and routes replies to pipeline; `/log` sends deliberate text to the
+  same pipeline. Imports and type-checks; everything about the live path —
+  intents, command sync, modal timeout, reply resolution — remains untested.
 - `DISCORD_CHANNELS` (env, comma-separated) limits which channels are parsed.
-  Empty means every channel the bot can see, which is one LLM call per message.
+  Empty means every channel the bot can see, with at most one LLM call per
+  ambient burst after triage.
 
 Two findings worth keeping:
 
@@ -420,25 +442,16 @@ Two findings worth keeping:
 
 ### Not done
 
-- `tests/samples.py` — 15 real messages. **Still the blocker for everything in
-  §9.** They must be real; inventing them defeats the purpose.
-- `scripts/try_parse.py`, `scripts/export.py`
-- No baseline score has ever been recorded
+- `tests/samples.py` and `tests/conversations.py` are invented. Replacing both
+  with real team transcripts is still the blocker for a trustworthy baseline.
+- `scripts/export.py` does not exist, so storage is not wired to notebook export.
 - The bot has never connected to Discord
 
 ### Known defects
 
-- `Stage.IDEATION = "idea"` but every description and prompt says `ideation`.
-  Deliberately left alone: it changes classification behaviour and there is no
-  baseline yet to measure the change against (§9).
-- `.env` has `LLM_MODEL=deepseek-v4-flash-vision-exp`, not the `deepseek-chat`
-  §5 settles on, and `core/agent.py`'s fallback default matches the .env value.
-  It works today, but it is a vision/experimental model sitting right next to
-  gotchas 3 and 4. Settle this **before** recording a baseline — a score is
-  bound to a model.
 - `session_log.md` normalises the team's wording slightly ("adding compliant
   wheels" → "compliant wheels"), a mild violation of hard rule 3. Tunable, but
-  not before there is a baseline.
+  not before real transcripts replace the invented baseline.
 
 ### First live run checklist
 
@@ -451,10 +464,12 @@ can only fail at runtime:
 3. `setup_hook` calls `storage.init_schema()` and `tree.sync()` — a global sync
    can take up to an hour to appear; use a guild-scoped sync while iterating
 4. Confirm the `/log` receipt is **not** ephemeral and that replying to the
-   bot's question actually lands in `find_by_followup_message_id`
+   bot's question actually lands in `find_by_open_followup`
 5. `on_message` swallows and logs exceptions so one bad message cannot kill the
    bot — check the log after the first session rather than assuming silence
    means success
+6. Tune the coalescer's 45-second quiet window from real conversation timing
+7. Confirm the open-question budget of 2 is not too tight for a shared channel
 
 ## 11. Working agreements for Claude Code
 
@@ -469,5 +484,5 @@ can only fail at runtime:
 - Do not let `channels/` or `exporters/` read from `core/storage.py`. Callers
   wire them together; the layers stay ignorant of each other.
 - Enforce record-integrity rules in Python where you can, not in the prompt.
-  `_apply_patch` is the pattern.
+  `apply_patch` is the pattern.
 - Prefer editing `prompts/*.md` over editing Python when the fix is behavioral.

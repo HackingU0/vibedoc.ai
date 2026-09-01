@@ -9,7 +9,7 @@
 ```mermaid
 flowchart TB
     accTitle: Current Discord FTC Agent Structure
-    accDescr: Implemented codebase layers showing Discord intake, the channel-agnostic core, persistence and model services, notebook export, and development checks. The dashed export path marks the caller that does not exist yet.
+    accDescr: Implemented codebase layers showing burst-aware Discord intake, channel-agnostic ingest policy, persistence and model services, notebook export, and development checks. The dashed export path marks the caller that does not exist yet.
 
     team(["👥 FTC team in Discord"])
 
@@ -18,9 +18,13 @@ flowchart TB
     end
 
     subgraph core_layer ["⚙️ Channel-agnostic core"]
+        inbox["core/inbox.py<br/>Burst coalescing"]
+        pipeline["core/pipeline.py<br/>Ingest and reply policy"]
+        triage["core/triage.py<br/>Cheap pre-filter"]
+        followup["core/followup.py<br/>Merge and stop gates"]
         agent["core/agent.py<br/>Parse, log, and merge entry points"]
         prompts[["core/prompts/*.md<br/>Ambient, /log, and reply prompts"]]
-        schema["core/schema.py<br/>Records, enums, and patch gate"]
+        schema["core/schema.py<br/>Records, enums, and follow-up ledger"]
         storage["core/storage.py<br/>Persistence and semantic search"]
     end
 
@@ -38,18 +42,26 @@ flowchart TB
     subgraph development_tools ["🧪 Development checks"]
         smoke["scripts/Smoke.py<br/>Ambient and reply smoke path"]
         scoring["scripts/try_parse.py<br/>Prompt scoring harness"]
+        conversation_scoring["scripts/try_conversation.py<br/>Rounds and nags"]
         samples["tests/samples.py<br/>Fifteen invented samples"]
-        tests["tests/test_core.py<br/>Merge, export, and envelope checks"]
+        conversations["tests/conversations.py<br/>Invented conversation fixtures"]
+        tests["tests/test_core.py<br/>Offline policy checks"]
     end
 
     team --> discord_bot
-    discord_bot -->|ambient, /log, reply| agent
-    discord_bot -->|save and look up| storage
-    discord_bot -->|wrap channel facts| schema
+    discord_bot -->|ambient bursts| inbox
+    inbox -->|flush complete burst| pipeline
+    discord_bot -->|/log and replies| pipeline
+
+    pipeline --> agent
+    pipeline --> storage
+    pipeline --> triage
+    pipeline --> followup
 
     agent -->|loads| prompts
     agent -->|validates output| schema
     agent -->|model calls| deepseek
+    followup -->|merges records| schema
     storage -->|validates rows| schema
     storage -->|read and write| postgres
     storage -.->|optional vectors| embeddings
@@ -63,7 +75,15 @@ flowchart TB
     scoring --> agent
     scoring --> samples
     samples --> schema
-    tests --> agent
+    conversation_scoring --> agent
+    conversation_scoring --> triage
+    conversation_scoring --> followup
+    conversation_scoring --> conversations
+    conversations --> schema
+    tests --> triage
+    tests --> inbox
+    tests --> followup
+    tests --> storage
     tests --> schema
     tests --> notebook
 
@@ -73,15 +93,16 @@ flowchart TB
     classDef warning fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
 
     class discord_bot,notebook adapter
-    class agent,prompts,schema,storage core
-    class team,deepseek,postgres,embeddings,smoke,scoring,samples,tests external
+    class inbox,pipeline,triage,followup,agent,prompts,schema,storage core
+    class team,deepseek,postgres,embeddings,smoke,scoring,conversation_scoring,samples,conversations,tests external
     class export_gap warning
 ```
 
 ## 📌 Boundary notes
 
-- `channels/discord_bot.py` owns Discord-specific input and output, while decisions stay in `core/`
+- `channels/discord_bot.py` owns Discord-specific input/output and burst wiring; `core/pipeline.py` owns ingest and reply decisions
+- `core/inbox.py` buffers opaque items and has no Discord dependency
 - `core/agent.py` is the only module that knows the chat-model provider; `core/storage.py` alone owns PostgreSQL, pgvector, and the optional embedding provider
 - `exporters/notebook.py` is a pure transform and does not query storage
 - The export pipeline is not connected in the current tree because `scripts/export.py` has not been implemented
-- `tests/samples.py` exists, but its own header identifies the messages as invented rather than real team data
+- `tests/samples.py` and `tests/conversations.py` both contain invented fixtures rather than real team data
