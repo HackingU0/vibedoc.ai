@@ -48,10 +48,10 @@ CREATE TABLE IF NOT EXISTS entries (
     raw_text            text NOT NULL,
     record              jsonb NOT NULL,
 
-    followup_message_id  text,
-    followup_asked_at    timestamptz,
-    followup_answer      text,
-    followup_answered_at timestamptz,
+    -- The follow-up conversation, whole, in the order it happened. jsonb for
+    -- the same reason `record` is jsonb: the shape is still moving, and a
+    -- generated column can never drift out of sync with what it derives from.
+    followups jsonb NOT NULL DEFAULT '[]'::jsonb,
 
     embedding vector({EMBEDDING_DIM}),
 
@@ -61,7 +61,15 @@ CREATE TABLE IF NOT EXISTS entries (
     stage         text GENERATED ALWAYS AS (record->>'stage') STORED,
     subteam       text GENERATED ALWAYS AS (record->>'subteam') STORED,
     component_key text GENERATED ALWAYS AS
-                  (lower(btrim(coalesce(record->>'component', '')))) STORED
+                  (lower(btrim(coalesce(record->>'component', '')))) STORED,
+
+    -- The routing key: the message id a reply must target to count as an
+    -- answer, and NULL once that question has been answered — otherwise later
+    -- chatter in the thread would overwrite an answer that already landed.
+    open_followup_message_id text GENERATED ALWAYS AS (
+        CASE WHEN followups -> -1 ->> 'answered_at' IS NULL
+             THEN followups -> -1 ->> 'message_id' END
+    ) STORED
 );
 
 CREATE INDEX IF NOT EXISTS entries_created_at_idx ON entries (created_at);
@@ -69,9 +77,11 @@ CREATE INDEX IF NOT EXISTS entries_component_idx  ON entries (component_key);
 CREATE INDEX IF NOT EXISTS entries_stage_idx      ON entries (stage);
 
 -- The follow-up routing lookup: a channel resolves "this is a reply to message
--- N" into the entry whose question it answers. Hot path, one row.
-CREATE INDEX IF NOT EXISTS entries_followup_msg_idx
-    ON entries (followup_message_id) WHERE followup_message_id IS NOT NULL;
+-- N" into the entry whose question it answers. Hot path, one row. Doubles as
+-- the index behind the per-channel open-question budget.
+CREATE INDEX IF NOT EXISTS entries_open_followup_idx
+    ON entries (open_followup_message_id)
+    WHERE open_followup_message_id IS NOT NULL;
 
 -- Redelivery guard. Discord will hand you the same message twice across a
 -- reconnect; without this you pay for a second parse and log a duplicate.
@@ -83,8 +93,7 @@ CREATE INDEX IF NOT EXISTS entries_embedding_idx
 """
 
 _COLUMNS = """entry_id, channel, source, channel_message_id, author, created_at,
-              raw_text, record, followup_message_id, followup_asked_at,
-              followup_answer, followup_answered_at"""
+              raw_text, record, followups"""
 
 
 # ── Connection ────────────────────────────────────────────────────────────────
@@ -169,10 +178,13 @@ def _vector_literal(values: list[float]) -> str:
 def _to_entry(row: asyncpg.Record) -> LoggedEntry:
     data = dict(row)
     raw = data.pop("record")
+    followups = data.pop("followups", None) or []
     return LoggedEntry(
-        **data, record=DesignRecord.model_validate(
+        **data,
+        record=DesignRecord.model_validate(
             json.loads(raw) if isinstance(raw, str) else raw
-        )
+        ),
+        followups=json.loads(followups) if isinstance(followups, str) else followups,
     )
 
 
@@ -195,20 +207,16 @@ async def save(entry: LoggedEntry, *, reembed: bool = True) -> LoggedEntry:
         await conn.execute(
             f"""
             INSERT INTO entries ({_COLUMNS}, embedding)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13::vector)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::vector)
             ON CONFLICT (entry_id) DO UPDATE SET
-                record               = EXCLUDED.record,
-                followup_message_id  = EXCLUDED.followup_message_id,
-                followup_asked_at    = EXCLUDED.followup_asked_at,
-                followup_answer      = EXCLUDED.followup_answer,
-                followup_answered_at = EXCLUDED.followup_answered_at,
-                embedding            = COALESCE(EXCLUDED.embedding, entries.embedding)
+                record     = EXCLUDED.record,
+                followups  = EXCLUDED.followups,
+                embedding  = COALESCE(EXCLUDED.embedding, entries.embedding)
             """,
             entry.entry_id, entry.channel, entry.source, entry.channel_message_id,
             entry.author, entry.created_at, entry.raw_text,
             entry.record.model_dump_json(),
-            entry.followup_message_id, entry.followup_asked_at,
-            entry.followup_answer, entry.followup_answered_at,
+            json.dumps([t.model_dump(mode="json") for t in entry.followups]),
             vector,
         )
     return entry
@@ -224,19 +232,58 @@ async def get(entry_id: str) -> Optional[LoggedEntry]:
     return _to_entry(row) if row else None
 
 
-async def find_by_followup_message_id(message_id: str) -> Optional[LoggedEntry]:
+async def find_by_open_followup(message_id: str) -> Optional[LoggedEntry]:
     """The follow-up routing lookup.
 
-    A channel resolves "this message replies to N" into the entry whose question
-    N was, and hands it to agent.apply_followup_answer. No match means the reply
-    is an ordinary message and goes down the ambient path instead.
+    A channel resolves "this message replies to N" into the entry whose live
+    question N is, and hands it to pipeline.handle_reply. No match means the
+    reply is an ordinary message and goes down the ambient path instead.
+
+    Scoped by the generated column to *unanswered* questions only, so once a
+    reply has landed, later chatter in the same thread cannot overwrite it.
     """
     async with (await pool()).acquire() as conn:
         row = await conn.fetchrow(
-            f"SELECT {_COLUMNS} FROM entries WHERE followup_message_id = $1",
+            f"""SELECT {_COLUMNS} FROM entries
+                WHERE open_followup_message_id = $1""",
             message_id,
         )
     return _to_entry(row) if row else None
+
+
+async def list_thread(
+    channel: str, component: Optional[str], *, limit: int = 20
+) -> list[LoggedEntry]:
+    """The recent entries in one component's design thread, oldest first.
+
+    This is what stops the bot asking about a problem the team stated last
+    Tuesday. Entries with no component share the "unfiled" bucket, which is
+    loose enough that the caller should treat a hit there as weak evidence.
+    """
+    key = (component or "").strip().lower()
+    async with (await pool()).acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT {_COLUMNS} FROM entries
+                WHERE channel = $1 AND component_key = $2
+                ORDER BY created_at DESC LIMIT $3""",
+            channel, key, limit,
+        )
+    return [_to_entry(r) for r in reversed(rows)]
+
+
+async def count_open_followups(channel: str, *, since: datetime) -> int:
+    """How many questions this channel is still waiting on.
+
+    The bot asking six things during one meeting is how it gets muted in week
+    one, so this is a hard budget rather than a heuristic.
+    """
+    async with (await pool()).acquire() as conn:
+        return await conn.fetchval(
+            """SELECT count(*) FROM entries
+               WHERE channel = $1 AND created_at >= $2
+                 AND open_followup_message_id IS NOT NULL""",
+            channel, since,
+        )
 
 
 async def find_by_channel_message_id(
