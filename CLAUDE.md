@@ -422,6 +422,10 @@ Working and verified locally:
 
 Written and checked offline, but **never run against real Discord**:
 
+- **Capture receipts** — a 📓 reaction acknowledges every captured message and
+  every merged reply without posting; `/log` returns an embed card showing the
+  *thread's* coverage; `/status` answers "what am I on" ephemerally. No tier
+  adds a message the bot did not already send.
 - **`core/pipeline.py`**, **`core/inbox.py`**, and **`core/triage.py`** — the
   ingest policy, burst coalescer, thread gate, and open-question budget. Their
   pieces have tests or real-DB checks, but timing and policy have not run under

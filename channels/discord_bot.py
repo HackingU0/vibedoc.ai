@@ -16,6 +16,11 @@ log = logging.getLogger(__name__)
 # Empty = listen everywhere. Set it: one API call per burst still adds up.
 CHANNELS = {c.strip() for c in os.getenv("DISCORD_CHANNELS", "").split(",") if c.strip()}
 
+# Dev convenience: a global command sync can take an hour to appear, which makes
+# /log untestable during a session. Setting this syncs to one guild instead,
+# which is instant. Leave it unset in production.
+GUILD_ID = os.getenv("DISCORD_GUILD_ID", "").strip()
+
 # The capture receipt. A reaction rather than a message on purpose: it says
 # "this is in the notebook" without spending a turn in the channel. §8's rule
 # is that the bot posts publicly and should stay quiet when in doubt — a
@@ -172,7 +177,12 @@ class Bot(discord.Client):
             )
             await interaction.followup.send(embed=_status_card(result), ephemeral=True)
 
-        await self.tree.sync()
+        if GUILD_ID:
+            guild = discord.Object(id=int(GUILD_ID))
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+        else:
+            await self.tree.sync()
 
     async def close(self):
         # The last burst of a meeting is the one most likely to be the recap.
