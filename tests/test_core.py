@@ -10,12 +10,13 @@ measure imagination, not the model.
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from core import followup, storage, triage
 from core.followup import apply_patch as _apply_patch
 from core.inbox import Coalescer
+from core.progress import current, spans
 from core.schema import (
     DesignRecord,
     FollowupPatch,
@@ -281,6 +282,69 @@ def test_coalescer():
         await c2.drain()
 
     asyncio.run(scenario())
+
+
+def test_spans():
+    base = datetime(2025, 10, 7, 19, 0, tzinfo=timezone.utc)
+    idle = timedelta(minutes=60)
+    soon = base + timedelta(minutes=30)
+
+    def at(minutes, *, author="ann", component="intake", stage=Stage.BUILD):
+        return LoggedEntry(
+            raw_text="x",
+            author=author,
+            created_at=base + timedelta(minutes=minutes),
+            record=R(component=component, stage=stage),
+        )
+
+    # Ten minutes apart is one continuous piece of work.
+    got = spans([at(0), at(10)], now=soon, idle=idle)
+    assert len(got) == 1
+    assert got[0].started_at == base
+    assert got[0].last_at == base + timedelta(minutes=10)
+    assert got[0].is_open, "last activity is well inside the idle window"
+    assert got[0].stages == [Stage.BUILD, Stage.BUILD]
+
+    # Three hours apart is two separate pieces of work.
+    got = spans([at(0), at(180)], now=base + timedelta(minutes=200), idle=idle)
+    assert len(got) == 2
+
+    # A closed span ends at its last activity, NOT at `now` — otherwise every
+    # task silently absorbs a full idle window.
+    got = spans([at(0)], now=base + timedelta(hours=5), idle=idle)
+    assert got[0].ended_at == base and not got[0].is_open
+
+    # A component switch must not truncate the span it interrupted: the intake
+    # work is plainly still running at minute 20.
+    got = spans([at(0), at(2, component="slide"), at(20)], now=soon, idle=idle)
+    by_component = {s.component: s for s in got}
+    assert by_component["intake"].last_at == base + timedelta(minutes=20)
+    assert by_component["slide"].last_at == base + timedelta(minutes=2)
+
+    # Two people never share a span.
+    got = spans([at(0), at(5, author="bo")], now=soon, idle=idle)
+    assert len(got) == 2 and {s.author for s in got} == {"ann", "bo"}
+
+    # Chitchat must not bridge two spans. Without the unknown-stage filter the
+    # 0/30/70 chain is one span; with it, 0 and 70 are 70 minutes apart.
+    got = spans(
+        [at(0), at(30, stage=Stage.UNKNOWN), at(70)],
+        now=base + timedelta(minutes=200),
+        idle=idle,
+    )
+    assert len(got) == 2, "an unknown-stage message extended a task"
+
+    # Unfiled work is its own bucket, never folded into a named component.
+    got = spans([at(0), at(5, component=None)], now=soon, idle=idle)
+    assert len(got) == 2 and {s.component for s in got} == {"intake", None}
+
+    # current() reports the thread they came back to, and only while it is live.
+    entries = [at(0), at(2, component="slide"), at(20)]
+    assert current(entries, author="ann", now=soon, idle=idle).component == "intake"
+    assert current(entries, author="bo", now=soon, idle=idle) is None
+    assert current(
+        entries, author="ann", now=base + timedelta(hours=9), idle=idle
+    ) is None
 
 
 if __name__ == "__main__":
