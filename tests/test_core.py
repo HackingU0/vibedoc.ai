@@ -7,9 +7,11 @@ tests/samples.py and the scoring loop in §9 — inventing the messages would
 measure imagination, not the model.
 """
 
+import asyncio
 from datetime import datetime, timezone
 
 from core import triage
+from core.inbox import Coalescer
 from core.agent import _apply_patch
 from core.schema import DesignRecord, FollowupPatch, LoggedEntry, Stage, Subteam
 from exporters.notebook import render_notebook
@@ -103,6 +105,56 @@ def test_triage():
 def test_silence_normalization():
     assert R(followup_question="").followup_question is None
     assert R(followup_question="null").followup_question is None
+
+
+def test_coalescer():
+    async def scenario():
+        flushed: list[tuple[str, list]] = []
+
+        async def flush(key, items):
+            flushed.append((key, items))
+
+        c = Coalescer(flush, quiet=0.02, max_items=3)
+
+        # Three messages inside the quiet window are one unit.
+        for text in ["intake keeps jamming", "when two come in at once", "going dual roller"]:
+            await c.add("chan:alex", text)
+            await asyncio.sleep(0.005)
+        await asyncio.sleep(0.05)
+        assert flushed == [("chan:alex", ["intake keeps jamming",
+                                          "when two come in at once",
+                                          "going dual roller"])], flushed
+
+        # Two people talking at once do not get mixed together.
+        flushed.clear()
+        await c.add("chan:alex", "a1")
+        await c.add("chan:sam", "s1")
+        await asyncio.sleep(0.05)
+        assert sorted(flushed) == [("chan:alex", ["a1"]), ("chan:sam", ["s1"])], flushed
+
+        # max_items fires immediately rather than buffering a monologue forever.
+        flushed.clear()
+        for i in range(3):
+            await c.add("chan:sam", i)
+        assert flushed == [("chan:sam", [0, 1, 2])], flushed
+
+        # A shutdown must not eat the meeting's last burst.
+        flushed.clear()
+        await c.add("chan:alex", "last thing")
+        await c.drain()
+        assert flushed == [("chan:alex", ["last thing"])], flushed
+
+        # A raising flush must not kill the timer task silently.
+        flushed.clear()
+        async def boom(key, items):
+            raise RuntimeError("downstream exploded")
+        c2 = Coalescer(boom, quiet=0.01)
+        await c2.add("k", "x")
+        await asyncio.sleep(0.05)
+        await c2.add("k", "y")          # still alive
+        await c2.drain()
+
+    asyncio.run(scenario())
 
 
 if __name__ == "__main__":
