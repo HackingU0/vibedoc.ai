@@ -143,6 +143,7 @@ def test_silence_normalization():
 
 def test_legacy_missing_fields():
     record = R(missing_fields=["rationale"]).model_dump(mode="json")
+    record["stage"] = "idea"
     record["missing_fields"] = ["rationale", "title", "confidence"]
     entry = storage._to_entry({
         "entry_id": "legacy",
@@ -155,6 +156,7 @@ def test_legacy_missing_fields():
         "record": json.dumps(record),
         "followups": "[]",
     })
+    assert entry.record.stage is Stage.IDEATION
     assert entry.record.missing_fields == ["rationale"]
 
 

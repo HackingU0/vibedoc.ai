@@ -14,6 +14,12 @@ class Stage(str, Enum):
     REFLECTION = "reflection"
     UNKNOWN = "unknown"
 
+    @classmethod
+    def _missing_(cls, value):
+        if value == "idea":
+            return cls.IDEATION
+        return None
+
 class Subteam(str, Enum):
     MECHANICAL = "mechanical"
     SOFTWARE = "software"
