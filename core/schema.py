@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 class Stage(str, Enum):
     PROBLEM = "problem"
@@ -121,6 +121,13 @@ class DesignRecord(BaseModel):
             "Return null if stage is unknown, missing_fields is empty, or the record is too trivial to follow up on."
         ),
     )
+
+    @field_validator("followup_question", mode="before")
+    @classmethod
+    def normalize_silence(cls, value):
+        if isinstance(value, str) and value.strip().lower() in {"", "null"}:
+            return None
+        return value
 
 
 # ── The four fields a follow-up is allowed to fill ────────────────────────────

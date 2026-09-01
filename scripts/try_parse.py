@@ -26,10 +26,16 @@ async def run_one(sample, sem):
 
 
 async def main():
-    sem = asyncio.Semaphore(CONCURRENCY)
-    results = await asyncio.gather(*(run_one(s, sem) for s in SAMPLES))
+    from core import triage
+    from core.schema import Stage
 
-    stage_ok = silent_ok = missing_ok = 0
+    sem = asyncio.Semaphore(CONCURRENCY)
+    skipped = [s for s in SAMPLES if not triage.worth_parsing(s.text)]
+    wrongly = [s for s in skipped if s.stage is not Stage.UNKNOWN]
+    results = await asyncio.gather(*(run_one(s, sem) for s in SAMPLES if s not in skipped))
+
+    stage_ok = missing_ok = 0
+    silent_ok = sum(1 for s in skipped if s.silent)
     n_silent = sum(s.silent for s in SAMPLES)
     fails = []
 
@@ -44,6 +50,8 @@ async def main():
         else:
             fails.append(f"  stage  {head}\n         want {sample.stage.value}, got {got.stage.value}")
 
+        if sample.silent and sample in skipped:
+            continue
         if sample.silent:
             if got.followup_question is None:
                 silent_ok += 1
@@ -58,6 +66,8 @@ async def main():
             fails.append(f"  missing {head}\n         +{sorted(extra)} -{sorted(lack)}")
 
     n = len(SAMPLES)
+    print(f"triage   skipped {len(skipped)}/{n} before any call "
+          f"({len(wrongly)} of them real — must be 0)")
     print(f"stage    {stage_ok:>2}/{n}   (gate >= 13)")
     print(f"silence  {silent_ok:>2}/{n_silent}   (gate {n_silent}/{n_silent}, non-negotiable)")
     print(f"missing  {missing_ok:>2}/{n}")

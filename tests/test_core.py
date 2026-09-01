@@ -9,9 +9,11 @@ measure imagination, not the model.
 
 from datetime import datetime, timezone
 
+from core import triage
 from core.agent import _apply_patch
 from core.schema import DesignRecord, FollowupPatch, LoggedEntry, Stage, Subteam
 from exporters.notebook import render_notebook
+from tests.samples import SAMPLES
 
 
 def R(**kw):
@@ -76,6 +78,31 @@ def test_envelope():
     asked = e.mark_followup_asked("m1", at=datetime(2025, 10, 12, tzinfo=timezone.utc))
     assert asked.awaiting_followup and asked.followup_asked_at.day == 12
     assert e.source == "ambient" and e.entry_id != E(13, R()).entry_id
+
+
+def test_triage():
+    # Cannot be a design record: skip before spending a call.
+    for junk in ["lol", "omw", "👍", "who's driving tmrw",
+                 "https://youtu.be/dQw4w9WgXcQ", "   "]:
+        assert not triage.worth_parsing(junk), junk
+
+    # Anything naming a part, carrying a number, or long enough goes through.
+    for real in ["the arm keeps shaking",
+                 "3m run, 2cm error",
+                 "intake kept jamming when two samples came in at once and we "
+                 "ended up going dual roller"]:
+        assert triage.worth_parsing(real), real
+
+    # The gate must never swallow a scoring sample that has a real stage.
+    # A false negative loses content silently; a false positive costs one call.
+    for s in SAMPLES:
+        if s.stage is not Stage.UNKNOWN:
+            assert triage.worth_parsing(s.text), f"gate swallowed a real one: {s.text[:50]}"
+
+
+def test_silence_normalization():
+    assert R(followup_question="").followup_question is None
+    assert R(followup_question="null").followup_question is None
 
 
 if __name__ == "__main__":

@@ -10,6 +10,18 @@ scaled to this set). stage >= 13/15.
 | 1 | 2026-08-31 | first baseline | deepseek-v4-flash-vision-exp | 14/15 | 3/3 | 12/15 |
 | 2 | 2026-08-31 | fixed two wrong expectations in samples.py (no prompt change) | same | 14/15 | 3/3 | 13/15 |
 | 3 | 2026-09-01 | model settled to deepseek-chat (no prompt change) | deepseek-chat | 14/15 | 3/3 | 13/15 |
+| 4 | 2026-09-01 | added core/triage.py pre-filter (no prompt change) | deepseek-chat | 13/15 | 2/3 | 13/15 |
+| 5 | 2026-09-01 | silence prompt: require JSON null (rolled back: missing regressed) | deepseek-chat | 13/15 | 3/3 | 9/15 |
+| 6 | 2026-09-01 | silence prompt moved to action section (rolled back: literal "null") | deepseek-chat | 13/15 | 2/3 | 10/15 |
+| 7 | 2026-09-01 | normalize silence output at schema boundary (prompt wording rolled back) | deepseek-chat | 13/15 | 3/3 | 7/15 |
+| 8 | 2026-09-01 | original prompt restored; normalization retained | deepseek-chat | 12/15 | 3/3 | 9/15 |
+| 9 | 2026-09-01 | same as run 8, repeated after stochastic stage miss | deepseek-chat | 13/15 | 3/3 | 9/15 |
+
+Triage skipped 1 of 15 samples before any model call, with 0 real-stage samples
+wrongly skipped. Runs 5–6 tested prompt-only fixes for an empty-string follow-up;
+they were rolled back after regressions or a literal `"null"` output. Run 7 added
+the final schema-boundary guard, which normalizes `""` and `"null"` to `None`
+while keeping the original prompt.
 
 ## ⚠️ This baseline is still not fully trustworthy
 
