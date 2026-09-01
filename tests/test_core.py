@@ -84,7 +84,7 @@ def test_notebook():
         "gaps must be per thread, not summed per entry"
     assert "| odometry | 1 | build | alternatives considered, why, results |" in out
     assert "1 message classified as unrelated" in out
-    assert "Snacks" not in out and out.count("\n## ") == 3  # Coverage + 2 threads
+    assert "Snacks" not in out and out.count("\n## ") == 4  # Coverage + Sessions + 2 threads
     assert "_4 entries" in out
 
     assert "No design records yet." in render_notebook([])
@@ -382,6 +382,27 @@ def test_span_gate():
 
     # Yesterday's question on the same component was a different task.
     assert not _span_is_busy(fresh, [at(-1440, turns=[asked]), fresh])
+
+
+def test_notebook_timeline():
+    base = datetime(2025, 10, 7, 19, 0, tzinfo=timezone.utc)
+
+    def at(minutes, stage):
+        return LoggedEntry(
+            raw_text="x",
+            author="ann",
+            created_at=base + timedelta(minutes=minutes),
+            record=R(component="intake", stage=stage),
+        )
+
+    md = render_notebook([at(0, Stage.PROBLEM), at(20, Stage.BUILD)])
+
+    assert "## Sessions" in md
+    assert "| Oct 07 | ann | intake | 19:00–19:20 | problem → build |" in md
+    # A window, never a duration. A span is the stretch the work was TALKED
+    # about; someone can machine a part for two hours in silence. Printing
+    # "20 min" would be a timesheet built on chat noise.
+    assert "20 min" not in md and "0:20" not in md
 
 
 if __name__ == "__main__":

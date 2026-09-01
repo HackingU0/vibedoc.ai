@@ -23,6 +23,7 @@ Two decisions worth knowing before reading the code:
 from datetime import datetime, tzinfo
 
 from core.followup import thread_gaps
+from core.progress import spans
 from core.schema import LoggedEntry, Stage
 
 # Reading order of the design cycle — used to show a thread's arc compactly.
@@ -104,6 +105,47 @@ def _gaps(entries: list[LoggedEntry]) -> str:
     return ", ".join(label.lower() for label in labels) if labels else "—"
 
 
+def _timeline(entries: list[LoggedEntry], tz: tzinfo | None = None) -> list[str]:
+    """A day-by-day view of who worked on what, and when.
+
+    The coverage table answers "is this design thread complete". This answers
+    "what happened at Tuesday's meeting" — the other half of what a judge flips
+    through a notebook looking for, and the half a component-grouped export
+    structurally cannot show.
+
+    Times, never durations. A span is the window in which the work was talked
+    about, not hours worked: someone can machine a part for two hours in
+    silence and leave a one-minute span behind. Rendering "1h51m" here, or
+    summing spans into a season total, would be a confidently wrong number in
+    front of a judge. See docs/design/progress-tracker.md §7.
+    """
+    # `now` only decides whether a span is open, which this table never prints.
+    runs = spans(entries, now=max(e.created_at for e in entries))
+    if not runs:
+        return []
+
+    out = [
+        "## Sessions",
+        "",
+        "| Day | Who | Component | Active | Stages |",
+        "|---|---|---|---|---|",
+    ]
+    for span in runs:
+        start = span.started_at.astimezone(tz) if tz else span.started_at
+        end = span.last_at.astimezone(tz) if tz else span.last_at
+        window = start.strftime("%H:%M")
+        if span.last_at != span.started_at:
+            window += f"–{end.strftime('%H:%M')}"
+        # dict.fromkeys dedupes while keeping the order it happened in.
+        arc = " → ".join(dict.fromkeys(s.value for s in span.stages))
+        out.append(
+            f"| {_date(span.started_at, tz)} | {span.author or '—'} "
+            f"| {span.component or UNFILED} | {window} | {arc} |"
+        )
+    out.append("")
+    return out
+
+
 def _render_entry(entry: LoggedEntry, tz: tzinfo | None = None) -> list[str]:
     record = entry.record
     head = f"### {_date(entry.created_at, tz)} · {record.stage.value} · {record.subteam.value}"
@@ -177,6 +219,7 @@ def render_notebook(
         out.append(f"| {name} | {len(group)} | {_arc(group)} | {_gaps(group)} |")
 
     out.append("")
+    out += _timeline(logged, tz)
 
     for name, group in threads.items():
         out += [f"## {name}", ""]
