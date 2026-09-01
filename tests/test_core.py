@@ -444,20 +444,44 @@ def test_author_question_gate():
     )
     calls = []
 
-    async def list_thread(channel, component):
-        return [entry]
-
     async def count_open(channel, *, since, author=None):
         calls.append(author)
         return int(author == "ann")
 
     async def scenario():
-        with patch.object(storage, "list_thread", new=list_thread), \
-                patch.object(storage, "count_open_followups", new=count_open):
-            assert await _question_for(entry) is None
+        with patch.object(storage, "count_open_followups", new=count_open):
+            assert await _question_for(entry, [entry]) is None
 
     asyncio.run(scenario())
     assert calls == ["ann"]
+
+
+def test_respond_reports_thread_gaps():
+    from core.pipeline import _respond
+
+    # The thread supplies a problem and a rationale across two entries. The
+    # entry in hand supplies neither. The receipt must report what the THREAD
+    # lacks, not what this one message lacks — otherwise a complete design
+    # line renders as full of holes (CLAUDE.md §10).
+    older = E(7, R(component="intake", problem_statement="jams on doubles"))
+    entry = E(7, R(component="intake", rationale="the mount already fits",
+                   missing_fields=["problem_statement"]))
+
+    async def list_thread(channel, component):
+        return [older, entry]
+
+    async def count_open(channel, *, since, author=None):
+        return 0
+
+    async def scenario():
+        with patch.object(storage, "list_thread", new=list_thread), \
+                patch.object(storage, "count_open_followups", new=count_open):
+            return await _respond(entry)
+
+    got = asyncio.run(scenario())
+    assert got.gaps == frozenset({"alternatives_considered", "test_evidence"})
+    assert got.entry is entry
+    assert got.question is None, "the record carries no followup_question to post"
 
 
 if __name__ == "__main__":

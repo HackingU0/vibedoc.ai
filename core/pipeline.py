@@ -33,6 +33,32 @@ class Ingested:
 
     entry: LoggedEntry
     question: Optional[str] = None
+    # What the whole design thread still lacks — NOT this entry's
+    # missing_fields. A thread whose problem, alternatives, rationale and
+    # results are spread over three entries is complete; rendering per-entry
+    # holes reports it as broken and sends the team chasing nothing (§10).
+    gaps: frozenset[str] = frozenset()
+
+
+async def init_schema() -> None:
+    """Initialize persistence without exposing storage to channel adapters."""
+    await storage.init_schema()
+
+
+async def _respond(entry: LoggedEntry) -> Ingested:
+    """One load of the design thread, two answers out of it.
+
+    The thread read is the expensive part and both callers need it — the
+    question decision to avoid asking what the log already answers, and the
+    receipt to show coverage. Loading it once here is why adding the receipt
+    costs no extra query.
+    """
+    thread = await storage.list_thread(entry.channel, entry.record.component)
+    return Ingested(
+        entry=entry,
+        question=await _question_for(entry, thread),
+        gaps=frozenset(followup.thread_gaps(thread)),
+    )
 
 
 async def ingest(
@@ -71,7 +97,7 @@ async def ingest(
         record=record,
     )
     await storage.save(entry)
-    return Ingested(entry, await _question_for(entry))
+    return await _respond(entry)
 
 
 async def handle_reply(
@@ -84,7 +110,7 @@ async def handle_reply(
 
     entry = await apply_followup_answer(entry, raw_text, at=at)
     await storage.save(entry)
-    return Ingested(entry, await _question_for(entry))
+    return await _respond(entry)
 
 
 async def mark_asked(
@@ -99,7 +125,9 @@ async def mark_asked(
     return entry
 
 
-async def _question_for(entry: LoggedEntry) -> Optional[str]:
+async def _question_for(
+    entry: LoggedEntry, thread: list[LoggedEntry]
+) -> Optional[str]:
     """Should the bot say anything, and what?
 
     Seven gates, cheapest first. The default is silence — §8's rule that a
@@ -112,7 +140,6 @@ async def _question_for(entry: LoggedEntry) -> Optional[str]:
     if not followup.should_ask_again(entry):
         return None                          # rounds exhausted, or the last one missed
 
-    thread = await storage.list_thread(entry.channel, entry.record.component)
     if not followup.open_gaps(entry.record, thread):
         return None                          # the thread already answers this
     if _span_is_busy(entry, thread):

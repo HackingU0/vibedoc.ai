@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
-from core import pipeline, storage
+from core import pipeline
 from core.inbox import Coalescer
 
 load_dotenv()
@@ -22,6 +22,42 @@ CHANNELS = {c.strip() for c in os.getenv("DISCORD_CHANNELS", "").split(",") if c
 # reaction is how you acknowledge without talking. Absence of one is also
 # information: chitchat never gets it, so triage is visible at a glance.
 CAPTURED = "📓"
+
+# The four fields a design record is judged on, in reading order. Matches
+# exporters/notebook.py's SECTIONS — the notebook and the receipt must never
+# disagree about what "complete" means.
+COVERAGE = [
+    ("problem_statement", "Problem"),
+    ("alternatives_considered", "Alternatives"),
+    ("rationale", "Why"),
+    ("test_evidence", "Results"),
+]
+
+
+def _card(result) -> discord.Embed:
+    """The /log receipt, as a card.
+
+    Coverage is the thread's, not this entry's: core already made that
+    distinction in `result.gaps`, and this only renders it.
+    """
+    record = result.entry.record
+    embed = discord.Embed(
+        title=record.title,
+        description=record.summary,
+        colour=discord.Colour.orange() if result.gaps else discord.Colour.green(),
+    )
+    embed.add_field(name="Stage", value=record.stage.value)
+    embed.add_field(name="Subteam", value=record.subteam.value)
+    embed.add_field(name="Component", value=record.component or "—")
+    embed.add_field(
+        name="This design thread so far",
+        value=" · ".join(
+            f"{'✗' if name in result.gaps else '✓'} {label}"
+            for name, label in COVERAGE
+        ),
+        inline=False,
+    )
+    return embed
 
 
 async def _receipt_reaction(message: discord.Message) -> None:
@@ -58,18 +94,13 @@ class LogModal(discord.ui.Modal, title="Log what you worked on"):
             created_at=interaction.created_at,
             raw_text=str(self.text),
         )
-        await interaction.followup.send(_receipt(result))
+        if result is None:
+            await interaction.followup.send(
+                "Logged nothing — that didn't look like design work."
+            )
+            return
+        await interaction.followup.send(embed=_card(result))
         await _say(result, interaction.channel.send)
-
-
-def _receipt(result) -> str:
-    if result is None:
-        return "Logged nothing — that didn't look like design work."
-    record = result.entry.record
-    lines = [f"**{record.title}**", f"`{record.stage.value}` · `{record.subteam.value}`"]
-    if record.missing_fields:
-        lines.append("still missing: " + ", ".join(record.missing_fields))
-    return "\n".join(lines)
 
 
 class Bot(discord.Client):
@@ -81,7 +112,7 @@ class Bot(discord.Client):
         self.bursts = Coalescer(self._flush_burst)
 
     async def setup_hook(self):
-        await storage.init_schema()
+        await pipeline.init_schema()
 
         @self.tree.command(name="log", description="Log work the team did offline")
         async def _log(interaction: discord.Interaction):
