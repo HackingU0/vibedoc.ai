@@ -268,6 +268,23 @@ class FollowupTurn(BaseModel):
     filled: list[str] = Field(default_factory=list)
 
 
+class Contribution(BaseModel):
+    """One other person's message, folded into someone else's record.
+
+    The peer analogue of FollowupTurn: same append-only, same `filled` stop
+    signal, but for a person who joined the thread unprompted rather than
+    answered a question the bot asked. No `message_id`/`asked_at` — nothing
+    was asked — and no separate answered_at, because a contribution is one
+    event, not a question-and-wait. See core/pipeline._find_open_peer_thread
+    and core/agent.apply_peer_contribution.
+    """
+
+    author: Optional[str] = None
+    raw_text: str
+    at: datetime
+    filled: list[str] = Field(default_factory=list)
+
+
 class LoggedEntry(BaseModel):
     """A DesignRecord plus the channel metadata around it.
 
@@ -300,6 +317,12 @@ class LoggedEntry(BaseModel):
     # Append-only. The last turn is the live one; everything before it is the
     # conversation that got the record this far.
     followups: list[FollowupTurn] = Field(default_factory=list)
+
+    # ── Peer lifecycle ──────────────────────────────────────────────────────
+    # Append-only, like followups, but populated when someone OTHER than
+    # `author` adds to this thread without being asked — see
+    # core/pipeline._find_open_peer_thread.
+    contributions: list[Contribution] = Field(default_factory=list)
 
     @property
     def open_followup_message_id(self) -> Optional[str]:

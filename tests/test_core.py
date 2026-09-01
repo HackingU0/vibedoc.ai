@@ -530,6 +530,25 @@ def test_status():
     assert asyncio.run(scenario("nobody")).span is None
 
 
+def test_contribution_roundtrip():
+    from core.schema import Contribution
+
+    entry = E(7, R(missing_fields=["rationale"]))
+    updated = entry.model_copy(update={
+        "contributions": [
+            *entry.contributions,
+            Contribution(author="bo", raw_text="try dual roller",
+                         at=entry.created_at, filled=["rationale"]),
+        ]
+    })
+    assert updated.contributions[0].author == "bo"
+    assert updated.contributions[0].filled == ["rationale"]
+    # Round-trips through JSON the same way followups already does — this is
+    # what storage.py's jsonb column will actually store and reload.
+    data = updated.model_dump(mode="json")
+    assert LoggedEntry.model_validate(data).contributions[0].author == "bo"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
