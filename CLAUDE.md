@@ -245,6 +245,18 @@ FTC teams meet at night. 8pm Pacific is 03:00 the next day in UTC, and date is
 what orders the notebook's threads. Store UTC, render in the team's zone —
 `render_notebook(entries, tz=ZoneInfo(...))`, from `TEAM_TZ`.
 
+**9. Supabase's direct-connection hostname (`db.<ref>.supabase.co`) is
+IPv6-only.** No `A` record, only `AAAA`. On a network without real IPv6
+routing this fails as `socket.gaierror: nodename nor servname provided`,
+which reads like a DNS typo, not a routing problem — `dig AAAA` will
+happily return an address that `getaddrinfo`/asyncpg still can't reach.
+Use the **Session Pooler** connection string instead (Project Settings →
+Database → Connection string → Session pooler): same session-level
+behavior as a direct connection, but resolves over IPv4. Do not reach for
+the Transaction Pooler (port 6543) as the fix — it runs PgBouncer in
+transaction mode, which breaks asyncpg's prepared-statement caching; the
+Session Pooler has neither problem.
+
 ---
 
 ## 7. The schema is the product's spine
