@@ -70,3 +70,55 @@ def apply_patch(record: "DesignRecord", patch: "FollowupPatch") -> "DesignRecord
             "followup_question": patch.next_question,
         }
     )
+
+
+def thread_gaps(entries: list["LoggedEntry"]) -> set[str]:
+    """Which patchable fields no entry in this design thread ever fills.
+
+    Deliberately NOT a sum of per-entry `missing_fields`. That field is scoped
+    to one message and exists to drive one follow-up. A design line whose
+    problem, alternatives, rationale and results are spread across three
+    entries is complete — rolling up per-entry gaps reports it as full of
+    holes and sends the team chasing nothing.
+
+    One definition, two consumers: the notebook's coverage table renders it,
+    and open_gaps() below uses it to keep the bot from asking about something
+    the log already answered.
+    """
+    return {
+        name
+        for name in PATCHABLE_FIELDS
+        if not any(getattr(e.record, name) for e in entries)
+    }
+
+
+def open_gaps(record: "DesignRecord", thread: list["LoggedEntry"]) -> set[str]:
+    """What is still worth asking about: this message's holes, minus what the
+    rest of its component thread already supplies.
+
+    `record.missing_fields` is left alone on purpose — it is the truth about
+    one message and the exporter reads it as such. This is a question filter,
+    not a rewrite.
+    """
+    return set(record.missing_fields) & thread_gaps(thread)
+
+
+def should_ask_again(entry: "LoggedEntry") -> bool:
+    """Is another round still earning its place?
+
+    Everything here is a stop condition. The default is silence; §8's rule that
+    a follow-up posts publicly in a live channel does not stop applying just
+    because the conversation is already underway.
+    """
+    turns = entry.followups
+    if len(turns) >= MAX_ROUNDS:
+        return False
+    if not turns:
+        return True
+
+    last = turns[-1]
+    if last.answered_at is None:
+        return False        # still waiting on the current one
+    if not last.filled:
+        return False        # the reply added nothing: the question missed
+    return bool(set(entry.record.missing_fields) & set(PATCHABLE_FIELDS))

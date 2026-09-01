@@ -10,7 +10,7 @@ measure imagination, not the model.
 import asyncio
 from datetime import datetime, timezone
 
-from core import triage
+from core import followup, triage
 from core.followup import apply_patch as _apply_patch
 from core.inbox import Coalescer
 from core.schema import (
@@ -136,6 +136,50 @@ def test_triage():
 def test_silence_normalization():
     assert R(followup_question="").followup_question is None
     assert R(followup_question="null").followup_question is None
+
+
+def test_thread_gaps():
+    thread = [
+        E(12, R(component="intake", problem_statement="jams")),
+        E(14, R(component="intake", rationale="fits the mount")),
+    ]
+    assert followup.thread_gaps(thread) == {"alternatives_considered", "test_evidence"}
+    assert followup.thread_gaps([]) == set(followup.PATCHABLE_FIELDS)
+
+    # The point of the gate: this message is missing a problem statement, but
+    # the thread stated it two entries ago. Asking again is the most annoying
+    # thing the bot can do.
+    rec = R(component="intake", missing_fields=["problem_statement", "test_evidence"])
+    assert followup.open_gaps(rec, thread) == {"test_evidence"}
+    assert followup.open_gaps(R(missing_fields=[]), thread) == set()
+
+
+def test_should_ask_again():
+    asked = E(12, R(missing_fields=["rationale"], followup_question="why?")) \
+        .mark_followup_asked("why?", "m1")
+
+    # Never asked yet -> ask.
+    assert followup.should_ask_again(E(12, R(missing_fields=["rationale"])))
+    # Asked, still waiting -> do not pile on.
+    assert not followup.should_ask_again(asked)
+    # Answered and productive, gap remains -> ask again.
+    productive = asked.record_followup_answer("lighter", ["rationale"])
+    productive = productive.model_copy(
+        update={"record": R(missing_fields=["test_evidence"], followup_question="numbers?")})
+    assert followup.should_ask_again(productive)
+    # Answered but filled nothing -> the question missed. Stop.
+    assert not followup.should_ask_again(
+        asked.record_followup_answer("idk man", []))
+    # Nothing left to fill -> stop.
+    assert not followup.should_ask_again(
+        asked.record_followup_answer("lighter", ["rationale"]).model_copy(
+            update={"record": R(missing_fields=[])}))
+    # Hard ceiling.
+    maxed = E(12, R(missing_fields=["rationale"]))
+    for i in range(followup.MAX_ROUNDS):
+        maxed = maxed.mark_followup_asked(f"q{i}", f"m{i}").record_followup_answer("a", ["rationale"])
+        maxed = maxed.model_copy(update={"record": R(missing_fields=["rationale"])})
+    assert not followup.should_ask_again(maxed)
 
 
 def test_coalescer():

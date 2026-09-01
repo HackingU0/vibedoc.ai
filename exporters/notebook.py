@@ -22,6 +22,7 @@ Two decisions worth knowing before reading the code:
 
 from datetime import datetime, tzinfo
 
+from core.followup import thread_gaps
 from core.schema import LoggedEntry, Stage
 
 # Reading order of the design cycle — used to show a thread's arc compactly.
@@ -94,18 +95,13 @@ def _arc(entries: list[LoggedEntry]) -> str:
 def _gaps(entries: list[LoggedEntry]) -> str:
     """What this thread never supplies anywhere.
 
-    Deliberately NOT a sum of per-entry `missing_fields`. That field is scoped to
-    one message and exists to drive a follow-up. Judges read the thread: a design
-    line whose problem, alternatives, rationale and results are spread across
-    three entries is complete, and rolling up per-entry gaps would report it as
-    full of holes. A gap is a field no entry in the thread ever filled.
+    The rule lives in core.followup.thread_gaps because the follow-up policy
+    needs exactly the same answer — a question about a field the thread already
+    fills is the most annoying thing the bot can ask.
     """
-    absent = [
-        label
-        for name, label in SECTIONS
-        if not any(getattr(e.record, name) for e in entries)
-    ]
-    return ", ".join(label.lower() for label in absent) if absent else "—"
+    absent = thread_gaps(entries)
+    labels = [label for name, label in SECTIONS if name in absent]
+    return ", ".join(label.lower() for label in labels) if labels else "—"
 
 
 def _render_entry(entry: LoggedEntry, tz: tzinfo | None = None) -> list[str]:
