@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS entries (
     -- generated column can never drift out of sync with what it derives from.
     followups jsonb NOT NULL DEFAULT '[]'::jsonb,
 
+    -- Same reasoning as followups: the peer-contribution ledger, whole, in
+    -- the order it happened. jsonb so the shape can keep moving without a
+    -- migration.
+    contributions jsonb NOT NULL DEFAULT '[]'::jsonb,
+
     embedding vector({EMBEDDING_DIM}),
 
     -- Derived from the record so they can never disagree with it. component_key
@@ -96,7 +101,7 @@ CREATE INDEX IF NOT EXISTS entries_embedding_idx
 """
 
 _COLUMNS = """entry_id, channel, source, channel_message_id, author, created_at,
-              raw_text, record, followups"""
+              raw_text, record, followups, contributions"""
 
 
 # ── Connection ────────────────────────────────────────────────────────────────
@@ -186,12 +191,14 @@ def _to_entry(row: asyncpg.Record) -> LoggedEntry:
     data = dict(row)
     raw = data.pop("record")
     followups = data.pop("followups", None) or []
+    contributions = data.pop("contributions", None) or []
     return LoggedEntry(
         **data,
         record=DesignRecord.model_validate(
             json.loads(raw) if isinstance(raw, str) else raw
         ),
         followups=json.loads(followups) if isinstance(followups, str) else followups,
+        contributions=json.loads(contributions) if isinstance(contributions, str) else contributions,
     )
 
 
@@ -214,16 +221,18 @@ async def save(entry: LoggedEntry, *, reembed: bool = True) -> LoggedEntry:
         await conn.execute(
             f"""
             INSERT INTO entries ({_COLUMNS}, embedding)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::vector)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::vector)
             ON CONFLICT (entry_id) DO UPDATE SET
-                record     = EXCLUDED.record,
-                followups  = EXCLUDED.followups,
-                embedding  = COALESCE(EXCLUDED.embedding, entries.embedding)
+                record        = EXCLUDED.record,
+                followups     = EXCLUDED.followups,
+                contributions = EXCLUDED.contributions,
+                embedding     = COALESCE(EXCLUDED.embedding, entries.embedding)
             """,
             entry.entry_id, entry.channel, entry.source, entry.channel_message_id,
             entry.author, entry.created_at, entry.raw_text,
             entry.record.model_dump_json(),
             json.dumps([t.model_dump(mode="json") for t in entry.followups]),
+            json.dumps([c.model_dump(mode="json") for c in entry.contributions]),
             vector,
         )
     return entry
