@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -9,7 +9,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 
 from .followup import PATCHABLE_FIELDS, apply_patch
-from .schema import DesignRecord, FollowupPatch, LoggedEntry
+from .schema import Contribution, DesignRecord, FollowupPatch, LoggedEntry
 
 load_dotenv()
 
@@ -17,6 +17,7 @@ _PROMPTS = Path(__file__).parent / "prompts"
 SYSTEM_PROMPT = (_PROMPTS / "design_entry.md").read_text(encoding="utf-8")
 FOLLOWUP_PROMPT = (_PROMPTS / "followup_merge.md").read_text(encoding="utf-8")
 SESSION_LOG_PROMPT = (_PROMPTS / "session_log.md").read_text(encoding="utf-8")
+PEER_PROMPT = (_PROMPTS / "peer_merge.md").read_text(encoding="utf-8")
 
 _model = OpenAIChatModel(
     os.getenv("LLM_MODEL", "deepseek-v4-flash"),
@@ -45,6 +46,13 @@ _followup_agent = Agent(
     _model,
     output_type=PromptedOutput(FollowupPatch),
     system_prompt=FOLLOWUP_PROMPT,
+    retries=2,
+)
+
+_peer_agent = Agent(
+    _model,
+    output_type=PromptedOutput(FollowupPatch),
+    system_prompt=PEER_PROMPT,
     retries=2,
 )
 
@@ -135,3 +143,45 @@ async def apply_followup_answer(
     return entry.model_copy(update={"record": merged}).record_followup_answer(
         answer_text, filled, at=at
     )
+
+
+async def apply_peer_contribution(
+    entry: LoggedEntry, author: Optional[str], raw_text: str,
+    at: Optional[datetime] = None,
+) -> LoggedEntry:
+    """Fold a second person's message into an entry they were not asked to
+    add to — the peer analogue of apply_followup_answer.
+
+    Reuses FollowupPatch/apply_patch unchanged: the same Python-enforced gate
+    that stops a bot-answer from touching stage/title/summary applies here —
+    a peer adding to a thread can no more rewrite it than a follow-up reply
+    can.
+
+    Returns `entry` UNCHANGED (the identical object, not just an equal one —
+    callers check with `is`) whenever nothing was folded in, whether because
+    nothing was left to fill or because the peer agent judged the message
+    unrelated. Unlike a follow-up reply, an unrelated peer message leaves no
+    trace: there is no live question waiting on it, so there is nothing worth
+    recording about a passerby comment that turned out not to be about this.
+    """
+    if not (set(entry.record.missing_fields) & set(PATCHABLE_FIELDS)):
+        return entry
+
+    prompt = "\n\n".join([
+        _render_context(entry.record),
+        f"# A new message from someone else in the thread\n{raw_text}",
+    ])
+    result = await _peer_agent.run(prompt)
+    merged = apply_patch(entry.record, result.output)
+    if merged is entry.record:
+        return entry
+
+    filled = sorted(set(entry.record.missing_fields) - set(merged.missing_fields))
+    contribution = Contribution(
+        author=author, raw_text=raw_text, at=at or datetime.now(timezone.utc),
+        filled=filled,
+    )
+    return entry.model_copy(update={
+        "record": merged,
+        "contributions": [*entry.contributions, contribution],
+    })
