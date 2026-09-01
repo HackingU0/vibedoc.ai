@@ -234,6 +234,15 @@ class Bot(discord.Client):
             created_at=first.created_at,
             channel_message_id=str(first.id),
             raw_text="\n".join(m.content for m in messages),
+            # first.reference survives coalescing untouched — discord.Message
+            # objects carry it natively. This is the id that _handle() already
+            # tried against find_by_open_followup and got no match for; here
+            # it is tried again as a peer-merge candidate instead.
+            reply_to_message_id=(
+                str(first.reference.message_id)
+                if first.reference and first.reference.message_id
+                else None
+            ),
         )
         if result is not None:
             await _receipt_reaction(last)
