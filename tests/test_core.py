@@ -20,6 +20,7 @@ from core.progress import current, spans
 from core.schema import (
     DesignRecord,
     FollowupPatch,
+    FollowupTurn,
     LoggedEntry,
     Stage,
     Subteam,
@@ -345,6 +346,42 @@ def test_spans():
     assert current(
         entries, author="ann", now=base + timedelta(hours=9), idle=idle
     ) is None
+
+
+def test_span_gate():
+    from core.pipeline import _span_is_busy
+
+    base = datetime(2025, 10, 7, 19, 0, tzinfo=timezone.utc)
+    asked = FollowupTurn(question="why?", message_id="m1", asked_at=base)
+
+    def at(minutes, *, author="ann", turns=()):
+        return LoggedEntry(
+            raw_text="x",
+            author=author,
+            created_at=base + timedelta(minutes=minutes),
+            record=R(component="intake", missing_fields=["rationale"]),
+            followups=list(turns),
+        )
+
+    fresh = at(20)
+
+    # A question is already outstanding on this task: stay quiet.
+    assert _span_is_busy(fresh, [at(0, turns=[asked]), fresh])
+
+    # Nothing asked on this task yet: the gate does not object.
+    assert not _span_is_busy(fresh, [at(0), fresh])
+
+    # DEPTH IS NOT BREADTH. The entry's own rounds must be invisible here, or
+    # handle_reply — where the entry always has a turn — could never ask again
+    # and the whole multi-round feature dies.
+    own = at(20, turns=[asked])
+    assert not _span_is_busy(own, [at(0), own])
+
+    # Someone else's interruption is not this person's interruption.
+    assert not _span_is_busy(fresh, [at(0, author="bo", turns=[asked]), fresh])
+
+    # Yesterday's question on the same component was a different task.
+    assert not _span_is_busy(fresh, [at(-1440, turns=[asked]), fresh])
 
 
 if __name__ == "__main__":

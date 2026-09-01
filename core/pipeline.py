@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
-from . import followup, storage, triage
+from . import followup, progress, storage, triage
 from .agent import apply_followup_answer, log_session, parse_design_record
 from .schema import LoggedEntry
 
@@ -102,7 +102,7 @@ async def mark_asked(
 async def _question_for(entry: LoggedEntry) -> Optional[str]:
     """Should the bot say anything, and what?
 
-    Five gates, cheapest first. The default is silence — §8's rule that a
+    Six gates, cheapest first. The default is silence — §8's rule that a
     follow-up posts publicly in a live channel is the reason every one of these
     is a veto rather than a score.
     """
@@ -115,6 +115,8 @@ async def _question_for(entry: LoggedEntry) -> Optional[str]:
     thread = await storage.list_thread(entry.channel, entry.record.component)
     if not followup.open_gaps(entry.record, thread):
         return None                          # the thread already answers this
+    if _span_is_busy(entry, thread):
+        return None                          # already interrupted this task once
 
     open_count = await storage.count_open_followups(
         entry.channel, since=datetime.now(timezone.utc) - BUDGET_WINDOW
@@ -124,3 +126,30 @@ async def _question_for(entry: LoggedEntry) -> Optional[str]:
         return None
 
     return question
+
+
+def _span_is_busy(entry: LoggedEntry, thread: list[LoggedEntry]) -> bool:
+    """Has this person's current task already been interrupted once?
+
+    Breadth, not depth. followup.should_ask_again() decides whether *this
+    record* has earned another round; this decides whether the *task* it
+    belongs to has already cost the team one interruption. One question per
+    task is the first budget in this codebase that means something — "two per
+    twelve hours" is a guess, "don't interrupt the same job twice" is a rule a
+    teammate would actually follow.
+
+    The entry being decided about is excluded on purpose. In handle_reply it
+    always carries a turn already, so counting its own rounds here would gate
+    the multi-round follow-up out of existence.
+
+    `now` is the entry's own timestamp rather than wall-clock time: the
+    decision is being made at the moment the entry arrived, and reading the
+    clock here would make the same inputs answer differently in a test than in
+    production.
+    """
+    for span in progress.spans(thread, now=entry.created_at):
+        if entry.entry_id not in span.entry_ids:
+            continue
+        others = set(span.entry_ids) - {entry.entry_id}
+        return any(e.entry_id in others and e.followups for e in thread)
+    return False
