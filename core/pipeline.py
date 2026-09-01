@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from . import followup, progress, storage, triage
-from .agent import apply_followup_answer, log_session, parse_design_record
+from .agent import apply_followup_answer, apply_peer_contribution, log_session, parse_design_record
 from .schema import LoggedEntry
 
 log = logging.getLogger(__name__)
@@ -87,11 +87,17 @@ async def ingest(
     raw_text: str,
     channel_message_id: Optional[str] = None,
     source: Literal["ambient", "log"] = "ambient",
+    reply_to_message_id: Optional[str] = None,
 ) -> Optional[Ingested]:
     """Turn text into a persisted record. None means nothing was worth doing.
 
     `raw_text` is expected to be a whole burst already (core/inbox.py), not a
     single message — triage and the model both read better that way.
+
+    `reply_to_message_id` is a Discord Reply target that did NOT resolve to an
+    open bot-question (channels/discord_bot.py already tried that path and
+    fell through here) — it is checked against the notebook as a peer-merge
+    candidate before this message is treated as a topic of its own.
     """
     # Reconnects redeliver; don't pay for the same message twice.
     if channel_message_id and await storage.find_by_channel_message_id(
@@ -103,6 +109,22 @@ async def ingest(
     # on purpose; second-guessing that is how input friction starts.
     if source == "ambient" and not triage.worth_parsing(raw_text):
         return None
+
+    # Explicit peer signal: a Reply that points at a message already in the
+    # notebook, from someone other than that entry's author. Cheaper than the
+    # implicit path below — the target is already named, so there is nothing
+    # to parse until we know the merge did not apply.
+    if source == "ambient" and reply_to_message_id and author:
+        target = await storage.find_by_channel_message_id(
+            channel, reply_to_message_id
+        )
+        if target and target.author != author:
+            merged = await apply_peer_contribution(
+                target, author, raw_text, at=created_at
+            )
+            if merged is not target:
+                await storage.save(merged)
+                return await _respond(merged)
 
     record = await (log_session if source == "log" else parse_design_record)(raw_text)
     entry = LoggedEntry(

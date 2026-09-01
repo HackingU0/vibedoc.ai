@@ -549,8 +549,58 @@ def test_contribution_roundtrip():
     assert LoggedEntry.model_validate(data).contributions[0].author == "bo"
 
 
+def test_explicit_peer_merge_routing():
+    from core import pipeline
+    from unittest.mock import AsyncMock
+
+    target = E(7, R(missing_fields=["rationale"]),
+               author="ann", channel_message_id="m1")
+    merged = target.model_copy(update={"record": R(rationale="lighter")})
+
+    calls = []
+
+    async def find_by_channel_message_id(channel, message_id):
+        calls.append(message_id)
+        return target if message_id == "m1" else None
+
+    async def save(entry, **kw):
+        return entry
+
+    async def scenario(reply_to, author, patched_merge, patched_parse=None):
+        with patch.object(storage, "find_by_channel_message_id",
+                           new=find_by_channel_message_id), \
+             patch.object(storage, "save", new=save), \
+             patch.object(storage, "list_thread", new=AsyncMock(return_value=[])), \
+             patch.object(storage, "count_open_followups", new=AsyncMock(return_value=0)), \
+             patch.object(pipeline, "apply_peer_contribution", new=patched_merge), \
+             patch.object(pipeline, "parse_design_record",
+                           new=patched_parse or AsyncMock(side_effect=AssertionError(
+                               "explicit trigger must not parse — the target is already known"))):
+            return await pipeline.ingest(
+                channel="discord", author=author,
+                created_at=target.created_at, raw_text="try dual roller",
+                reply_to_message_id=reply_to,
+            )
+
+    # A reply to a real entry, from someone else: merges, never parses.
+    result = asyncio.run(scenario("m1", "bo", AsyncMock(return_value=merged)))
+    assert result.entry is merged
+    assert calls == ["m1"]
+
+    # Replying to your OWN earlier message is not a peer joining — falls
+    # through and parses normally instead.
+    async def must_not_merge(*a, **kw):
+        raise AssertionError("should not attempt a merge against your own entry")
+    asyncio.run(scenario("m1", "ann", must_not_merge, AsyncMock(return_value=R())))
+
+    # A reply to a message that isn't tracked at all: falls through and
+    # parses normally, no crash.
+    asyncio.run(scenario("nonexistent", "bo", must_not_merge, AsyncMock(return_value=R())))
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
             fn()
             print(f"ok  {name}")
+
