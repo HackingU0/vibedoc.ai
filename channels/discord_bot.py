@@ -16,6 +16,25 @@ log = logging.getLogger(__name__)
 # Empty = listen everywhere. Set it: one API call per burst still adds up.
 CHANNELS = {c.strip() for c in os.getenv("DISCORD_CHANNELS", "").split(",") if c.strip()}
 
+# The capture receipt. A reaction rather than a message on purpose: it says
+# "this is in the notebook" without spending a turn in the channel. §8's rule
+# is that the bot posts publicly and should stay quiet when in doubt — a
+# reaction is how you acknowledge without talking. Absence of one is also
+# information: chitchat never gets it, so triage is visible at a glance.
+CAPTURED = "📓"
+
+
+async def _receipt_reaction(message: discord.Message) -> None:
+    """Mark a message as captured. Never allowed to break the capture itself."""
+    try:
+        await message.add_reaction(CAPTURED)
+    except discord.HTTPException:
+        # Missing Add Reactions, or the message was deleted mid-flush. The
+        # record is already saved and a receipt is cosmetic — same rule
+        # storage.save() applies to embeddings, where the optional half is
+        # never allowed to take the durable half down with it.
+        log.warning("could not add the capture reaction", exc_info=True)
+
 
 async def _say(result, send) -> None:
     """Post the question core decided on, and tell core which id it got."""
@@ -101,6 +120,11 @@ class Bot(discord.Client):
                 at=message.created_at,
             )
             if result is not None:
+                # A reply that filled nothing ends the exchange in silence, by
+                # design. Without this the person cannot tell "merged, nothing
+                # to add" from "the bot fell over" — which is exactly how the
+                # first live run read.
+                await _receipt_reaction(message)
                 await _say(result, message.reply)
                 return
 
@@ -121,6 +145,8 @@ class Bot(discord.Client):
             channel_message_id=str(first.id),
             raw_text="\n".join(m.content for m in messages),
         )
+        if result is not None:
+            await _receipt_reaction(last)
         await _say(result, last.reply)
 
 
