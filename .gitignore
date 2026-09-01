@@ -5,3 +5,8 @@ __pycache__/
 *.py[cod]
 data/
 .DS_Store
+
+# Claude Code local tooling — skill cache and lockfile, not project code
+.agents/
+.claude/
+skills-lock.json
