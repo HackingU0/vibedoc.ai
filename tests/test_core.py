@@ -8,9 +8,12 @@ measure imagination, not the model.
 """
 
 import asyncio
+import json
+import os
 from datetime import datetime, timezone
+from unittest.mock import patch
 
-from core import followup, triage
+from core import followup, storage, triage
 from core.followup import apply_patch as _apply_patch
 from core.inbox import Coalescer
 from core.schema import (
@@ -136,6 +139,52 @@ def test_triage():
 def test_silence_normalization():
     assert R(followup_question="").followup_question is None
     assert R(followup_question="null").followup_question is None
+
+
+def test_legacy_missing_fields():
+    record = R(missing_fields=["rationale"]).model_dump(mode="json")
+    record["missing_fields"] = ["rationale", "title", "confidence"]
+    entry = storage._to_entry({
+        "entry_id": "legacy",
+        "channel": "discord",
+        "source": "ambient",
+        "channel_message_id": "1",
+        "author": "alex",
+        "created_at": datetime(2025, 10, 12, tzinfo=timezone.utc),
+        "raw_text": "x",
+        "record": json.dumps(record),
+        "followups": "[]",
+    })
+    assert entry.record.missing_fields == ["rationale"]
+
+
+def test_search_embedding_failure_is_soft():
+    class BrokenEmbeddings:
+        async def create(self, **kwargs):
+            raise RuntimeError("embedding API is down")
+
+    class BrokenEmbedder:
+        embeddings = BrokenEmbeddings()
+
+    async def scenario():
+        with patch.dict(os.environ, {"EMBEDDING_API_KEY": "test"}), \
+                patch.object(storage, "_embedder", BrokenEmbedder()):
+            assert await storage.search("compliant wheels") == []
+
+    asyncio.run(scenario())
+
+
+def test_save_does_not_hide_embedding_text_bugs():
+    async def scenario():
+        with patch.object(storage, "_embed_text", side_effect=AttributeError("bug")):
+            try:
+                await storage.save(E(12, R()))
+            except AttributeError as exc:
+                assert str(exc) == "bug"
+            else:
+                assert False, "local embedding-text bugs must propagate"
+
+    asyncio.run(scenario())
 
 
 def test_thread_gaps():

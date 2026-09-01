@@ -66,6 +66,11 @@ class Bot(discord.Client):
 
         @self.tree.command(name="log", description="Log work the team did offline")
         async def _log(interaction: discord.Interaction):
+            if CHANNELS and str(interaction.channel_id) not in CHANNELS:
+                await interaction.response.send_message(
+                    "This bot isn't listening in this channel.", ephemeral=True
+                )
+                return
             await interaction.response.send_modal(LogModal())
 
         await self.tree.sync()

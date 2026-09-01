@@ -17,6 +17,7 @@ a vector store being reachable.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Optional
@@ -25,6 +26,8 @@ import asyncpg
 from dotenv import load_dotenv
 
 from .schema import DesignRecord, LoggedEntry, Stage
+
+log = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -163,7 +166,11 @@ async def embed(text: str) -> Optional[list[float]]:
         _embedder = AsyncOpenAI(
             api_key=key, base_url=os.getenv("EMBEDDING_BASE_URL") or None
         )
-    result = await _embedder.embeddings.create(model=EMBEDDING_MODEL, input=text)
+    try:
+        result = await _embedder.embeddings.create(model=EMBEDDING_MODEL, input=text)
+    except Exception:
+        log.exception("embedding request failed")
+        return None
     return result.data[0].embedding
 
 

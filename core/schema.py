@@ -12,7 +12,7 @@ class Stage(str, Enum):
     BUILD = "build"
     TEST = "test"
     REFLECTION = "reflection"
-    UNKNOWN = "unknown"u
+    UNKNOWN = "unknown"
 
 class Subteam(str, Enum):
     MECHANICAL = "mechanical"
@@ -96,7 +96,9 @@ class DesignRecord(BaseModel):
     )
 
 
-    missing_fields: list[str] = Field(
+    missing_fields: list[Literal[
+        "problem_statement", "alternatives_considered", "rationale", "test_evidence"
+    ]] = Field(
         default_factory=list,
         description=(
             "Which of the key fields above are missing from the source text, listed using their exact English field names. "
@@ -127,6 +129,16 @@ class DesignRecord(BaseModel):
     def normalize_silence(cls, value):
         if isinstance(value, str) and value.strip().lower() in {"", "null"}:
             return None
+        return value
+
+    @field_validator("missing_fields", mode="before")
+    @classmethod
+    def ignore_legacy_missing_fields(cls, value):
+        if isinstance(value, list):
+            allowed = {
+                "problem_statement", "alternatives_considered", "rationale", "test_evidence"
+            }
+            return [field for field in value if field in allowed]
         return value
 
 
