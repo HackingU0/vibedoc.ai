@@ -16,6 +16,7 @@ scaled to this set). stage >= 13/15.
 | 7 | 2026-09-01 | normalize silence output at schema boundary (prompt wording rolled back) | deepseek-chat | 13/15 | 3/3 | 7/15 |
 | 8 | 2026-09-01 | original prompt restored; normalization retained | deepseek-chat | 12/15 | 3/3 | 9/15 |
 | 9 | 2026-09-01 | same as run 8, repeated after stochastic stage miss | deepseek-chat | 13/15 | 3/3 | 9/15 |
+| 10 | 2026-09-01 | multi-round follow-ups + thread gate + question budget | deepseek-chat | 13/15 | 3/3 | 13/15 |
 
 Triage skipped 1 of 15 samples before any model call, with 0 real-stage samples
 wrongly skipped. Runs 5–6 tested prompt-only fixes for an empty-string follow-up;
@@ -59,3 +60,12 @@ None of these are worth a prompt change yet. All three are one-sample effects
 on invented text; fixing them now would be fitting the prompt to my own
 writing. The alternatives_considered pair above is the same open question
 twice — decide it once real messages surface the pattern.
+
+### Conversation-level (scripts/try_conversation.py, run 10)
+
+| conversations | questions asked | nags | rounds used |
+|---|---|---|---|
+| 4 | 3 | 0 | 1 / 1 / 1 / 0 |
+
+Still invented text, in the fixture as in samples.py. Replace both with real
+transcripts before treating any of this as a baseline.
