@@ -484,6 +484,43 @@ def test_respond_reports_thread_gaps():
     assert got.question is None, "the record carries no followup_question to post"
 
 
+def test_status():
+    from core.pipeline import status
+
+    now = datetime.now(timezone.utc)
+
+    def at(minutes_ago, **kw):
+        return LoggedEntry(
+            raw_text="x",
+            author=kw.pop("author", "ann"),
+            created_at=now - timedelta(minutes=minutes_ago),
+            record=R(**kw),
+        )
+
+    rows = [
+        at(30, component="intake", problem_statement="jams on doubles"),
+        at(10, component="intake", rationale="the mount already fits"),
+        at(5, component="slide", author="bo"),
+    ]
+
+    async def list_entries(*, since=None, channel=None, **kw):
+        assert channel == "discord", "status must scope to the channel it was asked in"
+        return rows
+
+    async def scenario(author):
+        with patch.object(storage, "list_entries", new=list_entries):
+            return await status(channel="discord", author=author)
+
+    got = asyncio.run(scenario("ann"))
+    assert got.span is not None and got.span.component == "intake"
+    assert got.entries == 2, "counts the component thread, not the whole channel"
+    # Thread-level again: problem and rationale are supplied across two rows.
+    assert got.gaps == frozenset({"alternatives_considered", "test_evidence"})
+
+    # Someone with nothing recent gets an empty answer, not a crash.
+    assert asyncio.run(scenario("nobody")).span is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

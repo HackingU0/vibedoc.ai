@@ -26,6 +26,10 @@ log = logging.getLogger(__name__)
 # would throttle the bot to silence by February.
 BUDGET_WINDOW = timedelta(hours=12)
 
+# How far back /status looks. A season-long window would answer "what are you
+# on right now" with something from October.
+STATUS_WINDOW = timedelta(days=7)
+
 
 @dataclass
 class Ingested:
@@ -38,6 +42,20 @@ class Ingested:
     # results are spread over three entries is complete; rendering per-entry
     # holes reports it as broken and sends the team chasing nothing (§10).
     gaps: frozenset[str] = frozenset()
+
+
+@dataclass
+class Status:
+    """What one person is on right now, and how complete that thread is.
+
+    Read-only and derived: this creates nothing, assigns nothing, and closes
+    nothing. CLAUDE.md §3 rules out task management, and the line that keeps
+    this on the right side of it is that a human can never edit any of it.
+    """
+
+    span: Optional["progress.Span"]
+    gaps: frozenset[str] = frozenset()
+    entries: int = 0
 
 
 async def init_schema() -> None:
@@ -186,3 +204,28 @@ def _span_is_busy(entry: LoggedEntry, thread: list[LoggedEntry]) -> bool:
         others = set(span.entry_ids) - {entry.entry_id}
         return any(e.entry_id in others and e.followups for e in thread)
     return False
+
+
+async def status(*, channel: str, author: Optional[str]) -> Status:
+    """Answer "what am I on, and what is this thread still missing".
+
+    Costs one query and no model call — the span is arithmetic over rows that
+    already exist (core/progress.py) and the gaps are the same rule the
+    notebook's coverage table renders.
+    """
+    now = datetime.now(timezone.utc)
+    entries = await storage.list_entries(since=now - STATUS_WINDOW, channel=channel)
+
+    span = progress.current(entries, author=author, now=now)
+    if span is None:
+        return Status(None)
+
+    # Gaps are the whole component thread's, including other people's entries:
+    # "is this design line judge-ready" is a question about the line, not about
+    # who typed which part of it.
+    key = (span.component or "").strip().lower()
+    thread = [
+        e for e in entries
+        if (e.record.component or "").strip().lower() == key
+    ]
+    return Status(span, frozenset(followup.thread_gaps(thread)), len(thread))

@@ -60,6 +60,43 @@ def _card(result) -> discord.Embed:
     return embed
 
 
+def _status_card(result) -> discord.Embed:
+    if result.span is None:
+        return discord.Embed(
+            title="Nothing on the go",
+            description="No design work logged for you in the last week.",
+            colour=discord.Colour.greyple(),
+        )
+
+    span = result.span
+    embed = discord.Embed(
+        title=span.component or "Unfiled",
+        description=f"{result.entries} entr{'y' if result.entries == 1 else 'ies'} "
+                    f"in this design thread",
+        colour=discord.Colour.orange() if result.gaps else discord.Colour.green(),
+    )
+    # Discord renders <t:...> in each viewer's own timezone, which sidesteps
+    # TEAM_TZ entirely for this surface (gotcha 8 is an export problem).
+    embed.add_field(
+        name="Active",
+        value=f"<t:{int(span.started_at.timestamp())}:t>"
+              f" – <t:{int(span.last_at.timestamp())}:t>",
+        inline=False,
+    )
+    embed.add_field(
+        name="Stages",
+        value=" → ".join(dict.fromkeys(s.value for s in span.stages)),
+        inline=False,
+    )
+    embed.add_field(
+        name="Still missing",
+        value=", ".join(label for name, label in COVERAGE if name in result.gaps)
+              or "nothing — this thread is complete",
+        inline=False,
+    )
+    return embed
+
+
 async def _receipt_reaction(message: discord.Message) -> None:
     """Mark a message as captured. Never allowed to break the capture itself."""
     try:
@@ -122,6 +159,18 @@ class Bot(discord.Client):
                 )
                 return
             await interaction.response.send_modal(LogModal())
+
+        @self.tree.command(name="status", description="What you're working on right now")
+        async def _status(interaction: discord.Interaction):
+            # Ephemeral is right here and wrong for /log. Gotcha 7 makes a /log
+            # receipt public because the follow-up round trip is keyed on
+            # replying to it; a status card starts no round trip, and posting
+            # one person's summary to the whole channel is pure noise.
+            await interaction.response.defer(thinking=True, ephemeral=True)
+            result = await pipeline.status(
+                channel="discord", author=interaction.user.display_name
+            )
+            await interaction.followup.send(embed=_status_card(result), ephemeral=True)
 
         await self.tree.sync()
 

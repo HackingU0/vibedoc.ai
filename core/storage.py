@@ -315,6 +315,7 @@ async def list_entries(
     *,
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
+    channel: Optional[str] = None,
     subteam: Optional[str] = None,
     source: Optional[str] = None,
     include_unknown: bool = False,
@@ -335,6 +336,8 @@ async def list_entries(
         add("created_at >= ${n}", since)
     if until is not None:
         add("created_at <= ${n}", until)
+    if channel is not None:
+        add("channel = ${n}", channel)
     if subteam is not None:
         add("subteam = ${n}", subteam)
     if source is not None:
