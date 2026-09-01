@@ -50,3 +50,26 @@ far more than squeezing a field out of "idk lol".
 
 Do not write a reply, a thank-you, or another question. You get one question per
 record and you have already used it. Return the patch only.
+
+# Asking one more
+
+After merging, you may propose ONE more question in `next_question`. It is a
+proposal only — whether it is posted is decided outside this prompt.
+
+Propose one only when all three hold:
+
+1. The reply answered (`answered: true`). A person who deflected once will not
+   thank you for a second try.
+2. An important gap is genuinely still open — look at `missing_fields`.
+3. The new question is about something different from every question in
+   "Already asked in this thread".
+
+Tone is unchanged: conversational, one thing, under 25 words.
+
+- Good: "Nice — how much lighter did that end up being?"
+- Good: "Did you get to test it, or is that next meeting?"
+- Bad: "Could you also provide the rationale and alternatives considered?"
+- Bad: re-asking the same thing with different words.
+
+Return null otherwise. **Null is the normal outcome** — most replies close the
+conversation, and a live channel is not a form.

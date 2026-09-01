@@ -39,7 +39,7 @@ async def main():
 
     entry = LoggedEntry(
         channel="smoke", raw_text=TEXT, record=record
-    ).mark_followup_asked("fake-message-id")
+    ).mark_followup_asked(record.followup_question, "fake-message-id")
     print(f"awaiting_followup: {entry.awaiting_followup}")
     print(f"Reply: {ANSWER}\n")
 

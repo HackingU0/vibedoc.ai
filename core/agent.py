@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -65,58 +65,62 @@ async def log_session(raw_text: str) -> DesignRecord:
     return result.output
 
 
-def _render_context(record: DesignRecord) -> str:
+def _render_context(record: DesignRecord, asked: list[str] = ()) -> str:
     """The existing record, as the merge agent sees it."""
-    return "\n".join(
-        [
-            "# Existing record",
-            f"stage: {record.stage.value}",
-            f"subteam: {record.subteam.value}",
-            f"title: {record.title}",
-            f"summary: {record.summary}",
-            f"component: {record.component}",
-            f"problem_statement: {record.problem_statement}",
-            f"alternatives_considered: {record.alternatives_considered}",
-            f"rationale: {record.rationale}",
-            f"test_evidence: {record.test_evidence}",
-            f"missing_fields: {record.missing_fields}",
-        ]
-    )
+    lines = [
+        "# Existing record",
+        f"stage: {record.stage.value}",
+        f"subteam: {record.subteam.value}",
+        f"title: {record.title}",
+        f"summary: {record.summary}",
+        f"component: {record.component}",
+        f"problem_statement: {record.problem_statement}",
+        f"alternatives_considered: {record.alternatives_considered}",
+        f"rationale: {record.rationale}",
+        f"test_evidence: {record.test_evidence}",
+        f"missing_fields: {record.missing_fields}",
+    ]
+    if asked:
+        lines += ["", "# Already asked in this thread — do not repeat these"]
+        lines += [f"- {q}" for q in asked]
+    return "\n".join(lines)
 
 
 async def apply_followup_answer(
     entry: LoggedEntry, answer_text: str, at: Optional[datetime] = None
 ) -> LoggedEntry:
-    """Fold a reply to the bot's follow-up back into the entry it belongs to.
+    """Fold a reply to the bot's question back into the entry it belongs to.
 
     This is the other half of asking. Without it the question gets answered, the
     answer gets parsed as a fresh junk record, and the original hole stays open.
 
-    Returns the updated entry. Always records that a reply arrived, even when
-    the reply turned out to add nothing — a shrug is an outcome, and re-asking
-    is not on the table.
-    """
-    # `at` is the reply's own timestamp when the channel has one.
-    stamp = {
-        "followup_answer": answer_text,
-        "followup_answered_at": at or datetime.now(timezone.utc),
-    }
+    Always closes the live turn, even when the reply added nothing — a shrug is
+    an outcome, and an empty `filled` is precisely the signal that stops the
+    next round (core/followup.should_ask_again).
 
-    # Nothing was asked, or nothing is left to fill: don't spend a call.
-    if entry.record.followup_question is None or not (
-        set(entry.record.missing_fields) & set(PATCHABLE_FIELDS)
-    ):
-        return entry.model_copy(update=stamp)
+    The model's proposed next question rides back on
+    `record.followup_question`. It is a proposal: core/pipeline decides whether
+    it is ever posted.
+    """
+    if not entry.followups:
+        return entry
+
+    # Nothing left this reply could legally fill: don't spend a call.
+    if not (set(entry.record.missing_fields) & set(PATCHABLE_FIELDS)):
+        return entry.record_followup_answer(answer_text, [], at=at)
 
     prompt = "\n\n".join(
         [
-            _render_context(entry.record),
-            f"# The question you asked\n{entry.record.followup_question}",
+            _render_context(entry.record, [t.question for t in entry.followups[:-1]]),
+            f"# The question you asked\n{entry.followups[-1].question}",
             f"# The reply\n{answer_text}",
         ]
     )
 
     result = await _followup_agent.run(prompt)
-    return entry.model_copy(
-        update={**stamp, "record": apply_patch(entry.record, result.output)}
+    merged = apply_patch(entry.record, result.output)
+    filled = sorted(set(entry.record.missing_fields) - set(merged.missing_fields))
+
+    return entry.model_copy(update={"record": merged}).record_followup_answer(
+        answer_text, filled, at=at
     )
