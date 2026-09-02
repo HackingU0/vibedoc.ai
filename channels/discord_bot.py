@@ -35,6 +35,13 @@ CAPTURED = "📓"
 # ponytail: a flat cap, not a character budget. Ten cards is roughly 400
 # characters — measure before making it cleverer.
 BOARD_MAX_CARDS = 10
+DIGEST_MAX_THREADS = 8
+
+BUCKETS = (
+    ("almost", "One field from done"),
+    ("untested", "Decided, never tested"),
+    ("stale", "Nobody has touched these"),
+)
 
 # The four fields a design record is judged on, in reading order. Matches
 # exporters/notebook.py's SECTIONS — the notebook and the receipt must never
@@ -45,6 +52,10 @@ COVERAGE = [
     ("rationale", "Why"),
     ("test_evidence", "Results"),
 ]
+
+
+def _needs(gaps) -> str:
+    return ", ".join(label for name, label in COVERAGE if name in gaps) or "—"
 
 
 def _roles(user) -> list[str]:
@@ -180,6 +191,39 @@ def _board_card(board) -> discord.Embed:
     return embed
 
 
+def _digest_card(digest) -> discord.Embed:
+    total = (
+        f"{digest.total} design thread{'' if digest.total == 1 else 's'} · "
+        f"{digest.complete} complete"
+    )
+    if not (digest.almost or digest.untested or digest.stale):
+        return discord.Embed(
+            title="Nothing missing", description=total,
+            colour=discord.Colour.green(),
+        )
+
+    embed = discord.Embed(
+        title="What the season still needs", description=total,
+        colour=discord.Colour.orange(),
+    )
+    for attr, label in BUCKETS:
+        rows = getattr(digest, attr)
+        if not rows:
+            continue
+        lines = [
+            f"**{thread.component}** — needs {_needs(thread.gaps)}"
+            for thread in rows[:DIGEST_MAX_THREADS]
+        ]
+        if len(rows) > DIGEST_MAX_THREADS:
+            lines.append(f"+{len(rows) - DIGEST_MAX_THREADS} more")
+        embed.add_field(
+            name=f"{label} ({len(rows)})",
+            value="\n".join(lines)[:1024],
+            inline=False,
+        )
+    return embed
+
+
 async def _receipt_reaction(message: discord.Message) -> None:
     """Mark a message as captured. Never allowed to break the capture itself."""
     try:
@@ -261,6 +305,12 @@ class Bot(discord.Client):
             await interaction.response.defer(thinking=True, ephemeral=True)
             result = await pipeline.board(channel="discord")
             await interaction.followup.send(embed=_board_card(result), ephemeral=True)
+
+        @self.tree.command(name="digest", description="What the season still needs")
+        async def _digest(interaction: discord.Interaction):
+            await interaction.response.defer(thinking=True, ephemeral=True)
+            result = await pipeline.digest(channel="discord")
+            await interaction.followup.send(embed=_digest_card(result), ephemeral=True)
 
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))

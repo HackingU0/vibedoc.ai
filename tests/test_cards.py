@@ -112,6 +112,36 @@ def test_field_value_stays_under_discords_cap():
     assert len(embed.fields[0].value) <= 1024
 
 
+def test_digest_card_lists_buckets_and_counts_the_rest():
+    from channels.discord_bot import _digest_card
+    from core.digest import Digest, Thread
+
+    def T(component, gaps, ago_days=1):
+        return Thread(
+            component=component, entries=2, authors=("Eli",),
+            stages=(Stage.BUILD,), gaps=frozenset(gaps),
+            last_at=NOW - timedelta(days=ago_days),
+        )
+
+    empty = _digest_card(Digest([], [], [], total=3, complete=3))
+    assert "Nothing missing" in empty.title
+    assert "3" in empty.description
+
+    card = _digest_card(Digest(
+        almost=[T("intake", ["test_evidence"])],
+        untested=[T("slide", ["rationale", "test_evidence"])],
+        stale=[], total=6, complete=2,
+    ))
+    names = [field.name for field in card.fields]
+    assert "One field from done" in names[0]
+    assert "Decided, never tested" in names[1]
+    assert len(names) == 2
+    assert "intake" in card.fields[0].value
+    assert "test_evidence" not in card.fields[0].value
+    assert "Results" in card.fields[0].value
+    assert all(len(field.value) <= 1024 for field in card.fields)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

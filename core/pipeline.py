@@ -18,6 +18,7 @@ from typing import Literal, Optional
 
 from . import followup, progress, storage, triage
 from .agent import apply_followup_answer, apply_peer_contribution, log_session, parse_design_record
+from .digest import Digest, summarise
 from .schema import LoggedEntry, Stage, thread_key
 
 log = logging.getLogger(__name__)
@@ -326,3 +327,9 @@ async def board(*, channel: str) -> Board:
     return Board(
         progress.by_team_and_stage(progress.spans(entries, now=now)), since
     )
+
+
+async def digest(*, channel: str) -> Digest:
+    """Derive what the whole season still needs, without a model call."""
+    entries = await storage.list_entries(channel=channel)
+    return summarise(entries, now=datetime.now(timezone.utc))

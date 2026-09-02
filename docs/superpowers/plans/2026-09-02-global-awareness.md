@@ -599,7 +599,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
 - Produces: `pipeline.digest(*, channel: str) -> Digest` and
   `discord_bot._digest_card(digest) -> discord.Embed`.
 
-- [ ] **Step 1: Write the failing core test**
+- [x] **Step 1: Write the failing core test**
 
   In `tests/test_core.py`:
 
@@ -627,12 +627,12 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
       assert [t.component for t in got.almost + got.untested + got.stale]
   ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
   Run: `LLM_API_KEY=dummy uv run python -m tests.test_core`
   Expected: `ImportError: cannot import name 'digest' from 'core.pipeline'`.
 
-- [ ] **Step 3: Implement `pipeline.digest()`**
+- [x] **Step 3: Implement `pipeline.digest()`**
 
   In `core/pipeline.py`, add to the `.schema` import line what it needs, add
   `from .digest import Digest, summarise` beside the other core imports, and
@@ -651,11 +651,11 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
       return summarise(entries, now=datetime.now(timezone.utc))
   ```
 
-- [ ] **Step 4: Run it and watch it pass**
+- [x] **Step 4: Run it and watch it pass**
 
   Run: `LLM_API_KEY=dummy uv run python -m tests.test_core` → **25** `ok`.
 
-- [ ] **Step 5: Write the failing card check**
+- [x] **Step 5: Write the failing card check**
 
   In `tests/test_cards.py`:
 
@@ -692,7 +692,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
       assert all(len(f.value) <= 1024 for f in card.fields)
   ```
 
-- [ ] **Step 6: Implement the card and the command**
+- [x] **Step 6: Implement the card and the command**
 
   In `channels/discord_bot.py`, beside `_board_card`. Note it reuses the
   existing `COVERAGE` table for field labels — the notebook, the `/log` receipt
@@ -770,7 +770,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
   round trip, and posting the season's holes to the whole channel because one
   person asked is the noise §8 warns about.
 
-- [ ] **Step 7: Run both suites**
+- [x] **Step 7: Run both suites**
 
   ```bash
   LLM_API_KEY=dummy uv run python -m tests.test_core
@@ -779,7 +779,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
 
   Expected: **25** `ok` and **7** `ok`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
   ```bash
   git add core/pipeline.py channels/discord_bot.py tests/test_core.py tests/test_cards.py

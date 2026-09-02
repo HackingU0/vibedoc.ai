@@ -93,6 +93,28 @@ def test_digest_buckets():
     )
 
 
+def test_digest_reads_the_whole_season():
+    from unittest.mock import AsyncMock
+
+    from core.pipeline import digest
+
+    now = datetime.now(timezone.utc)
+    rows = [
+        LoggedEntry(
+            raw_text="x", author="Eli", created_at=now - timedelta(days=200),
+            record=R(component="intake", stage=Stage.BUILD),
+        ),
+    ]
+    list_entries = AsyncMock(return_value=rows)
+    with patch.object(storage, "list_entries", new=list_entries):
+        got = asyncio.run(digest(channel="discord"))
+
+    _, kwargs = list_entries.await_args
+    assert kwargs == {"channel": "discord"}
+    assert got.total == 1
+    assert [t.component for t in got.almost + got.untested + got.stale]
+
+
 def test_patch_gate():
     rec = R(missing_fields=["rationale"], followup_question="why?")
 
