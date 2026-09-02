@@ -433,6 +433,14 @@ optional-embedding failure boundaries. Run it after touching `apply_patch`,
 `exporters/`, or ingest policy. It says nothing about prompt quality — that is
 what the scoring loops are for.
 
+`python -m tests.test_cards` — the same idea for the Discord cards, in its own
+file because it imports `discord` and `test_core.py` may not. It builds a
+`pipeline.Board` by hand and asserts on the embed `_board_card` returns:
+column order, dropped-and-footnoted empty stages, the single-lane team-suffix
+rule, the `+N more` roll-up, plain-text footer, and the 1024-character field
+cap. It says nothing about how the card *looks* — that is the live checklist
+in `docs/running-the-bot.md` §7g.
+
 ---
 
 ## 10. Current status
@@ -476,10 +484,10 @@ Written and checked offline, but **never run against real Discord**:
 - **Capture receipts and read commands** — a 📓 reaction acknowledges every
   captured message and every merged reply without posting; `/log` returns an
   embed card showing the *thread's* coverage; `/status` answers "what am I on"
-  and `/board` answers "who is on what" ephemerally. The `/board` module import,
-  22 pure checks, and an offline embed-structure check pass; no live Discord
-  card, command sync, desktop/mobile layout, or ephemeral visibility check has
-  been run.
+  and `/board` answers "who is on what" ephemerally. `tests/test_cards.py`
+  checks the card's structure offline (6 checks) and `tests/test_core.py` the
+  policy behind it (22); no live Discord card, command sync, desktop/mobile
+  layout, or ephemeral visibility check has been run.
 - **`core/pipeline.py`**, **`core/inbox.py`**, and **`core/triage.py`** — the
   ingest policy, read-command policy, burst coalescer, thread gate, and
   open-question budget. Their pieces have tests or real-DB checks, but timing

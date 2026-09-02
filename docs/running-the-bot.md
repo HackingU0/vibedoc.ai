@@ -257,6 +257,12 @@ spans (`●`) appear before quiet ones (`○`), empty stages are named in the
 footer, and the card is visible only to the person who ran the command. Check
 it once on desktop and once on mobile; inline fields stack on mobile by design.
 
+The footer names the empty stages and the window; the date beside it is
+`embed.timestamp`, rendered in your own timezone. The `+N more` roll-up and
+the field-length cap are covered offline by `tests/test_cards.py` — do not
+edit `BOARD_MAX_CARDS` mid-session to see them, that is how a temporary edit
+gets committed.
+
 ---
 
 ## 8. Look at what it captured
