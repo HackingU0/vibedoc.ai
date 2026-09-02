@@ -118,7 +118,7 @@ Cheapest failures first.
 uv run python -m tests.test_core
 ```
 
-Expected: 15 lines of `ok`. Three tracebacks scroll past on the way —
+Expected: 22 lines of `ok`. Three tracebacks scroll past on the way —
 `downstream exploded` and `embedding API is down` are deliberately raised by
 tests that check those failures are handled. Only the `ok` lines matter.
 
@@ -180,7 +180,7 @@ thing said before you quit still gets parsed.
 
 ## 7. What to actually type in the channel
 
-Six paths. Do them in this order.
+Seven paths. Do them in this order.
 
 ### a. One design message → one record
 
@@ -248,12 +248,22 @@ Expect: the first card names the current component and shows the same thread
 coverage as `/log`; the second says "Nothing on the go". Both are visible only
 to the person who ran the command.
 
+### g. `/board`
+
+Run `/board` mid-session.
+
+Expect: one ephemeral card with non-empty design stages in cycle order. Live
+spans (`●`) appear before quiet ones (`○`), empty stages are named in the
+footer, and the card is visible only to the person who ran the command. Check
+it once on desktop and once on mobile; inline fields stack on mobile by design.
+
 ---
 
 ## 8. Look at what it captured
 
-Two renderers read the database. Start with the board — it is one screen, and
-it tells you immediately whether `author` tags and `component` came out usable:
+`/board` is the quickest mid-session view. The two file renderers below read
+the same database; use `scripts.kanban` to confirm that the Discord card and
+markdown table agree about what work exists, even though their layouts differ:
 
 ```bash
 uv run python -m scripts.kanban > board.md
@@ -323,6 +333,7 @@ For this run, success is narrower:
 - [ ] `/log`'s receipt was public
 - [ ] a captured message got a 📓 and chitchat did not
 - [ ] `/status` returned a card only you could see
+- [ ] `/board` matched `scripts.kanban`, named empty stages, and was visible only to you
 - [ ] the terminal shows no `dropping message` lines
 
 Anything failing above is a runtime bug in `channels/discord_bot.py`, which has

@@ -123,7 +123,7 @@ DiscordFTCAgent/
 │   ├── inbox.py               # burst coalescing
 │   ├── followup.py            # merge gate + multi-round stop policy
 │   ├── progress.py            # who is on what, derived — see docs/design/
-│   ├── pipeline.py            # ingest policy — the only caller of all of core
+│   ├── pipeline.py            # ingest + read policy — the only caller of all of core
 │   ├── storage.py             # memory: postgres + pgvector
 │   └── prompts/               # kept out of .py on purpose — see §8
 │       ├── design_entry.md    # ambient
@@ -131,7 +131,7 @@ DiscordFTCAgent/
 │       └── followup_merge.md  # reply
 │
 ├── channels/                  # entry points from the outside world
-│   └── discord_bot.py         # ears and mouth only
+│   └── discord_bot.py         # ears, mouth, and Discord cards only
 │
 ├── exporters/                 # outputs — notebook is only the first one
 │   ├── notebook.py            # list[LoggedEntry] -> markdown, pure
@@ -456,9 +456,8 @@ Working and verified locally:
   Lanes come from `progress.team()`; an author with no team role goes to a
   `No tag` lane. Verified against a real pgvector container: the `author_roles`
   ALTER reaches a table that predates the column, rows written before it read
-  back as `[]`, and `save()`'s reordered positional arguments round-trip. `scripts/kanban.py` does the DB read.
-  No `/board` command yet — §9's rule, look at a real rendered board before
-  wiring Discord.
+  back as `[]`, and `save()`'s reordered positional arguments round-trip.
+  `scripts/kanban.py` does the DB read; `/board` uses the same core grouping.
 - **`core/storage.py`** — postgres + pgvector. Tested against a real pgvector
   container: idempotent schema, upsert, follow-up lookup, redelivery dedup, all
   filters, vector search, and DB → notebook end to end.
@@ -474,18 +473,22 @@ Working and verified locally:
 
 Written and checked offline, but **never run against real Discord**:
 
-- **Capture receipts** — a 📓 reaction acknowledges every captured message and
-  every merged reply without posting; `/log` returns an embed card showing the
-  *thread's* coverage; `/status` answers "what am I on" ephemerally. No tier
-  adds a message the bot did not already send.
+- **Capture receipts and read commands** — a 📓 reaction acknowledges every
+  captured message and every merged reply without posting; `/log` returns an
+  embed card showing the *thread's* coverage; `/status` answers "what am I on"
+  and `/board` answers "who is on what" ephemerally. The `/board` module import,
+  22 pure checks, and an offline embed-structure check pass; no live Discord
+  card, command sync, desktop/mobile layout, or ephemeral visibility check has
+  been run.
 - **`core/pipeline.py`**, **`core/inbox.py`**, and **`core/triage.py`** — the
-  ingest policy, burst coalescer, thread gate, and open-question budget. Their
-  pieces have tests or real-DB checks, but timing and policy have not run under
-  real Discord traffic.
+  ingest policy, read-command policy, burst coalescer, thread gate, and
+  open-question budget. Their pieces have tests or real-DB checks, but timing
+  and policy have not run under real Discord traffic.
 - **`channels/discord_bot.py`** — `on_message` sends ambient bursts through the
   coalescer and routes replies to pipeline; `/log` sends deliberate text to the
-  same pipeline. Imports and type-checks; everything about the live path —
-  intents, command sync, modal timeout, reply resolution — remains untested.
+  same pipeline; `/status` and `/board` render its read models. Imports and
+  type-checks; everything about the live path — intents, command sync, modal
+  timeout, reply resolution, and embed appearance — remains untested.
 - `DISCORD_CHANNELS` (env, comma-separated) limits which channels are parsed.
   Empty means every channel the bot can see, with at most one LLM call per
   ambient burst after triage.
