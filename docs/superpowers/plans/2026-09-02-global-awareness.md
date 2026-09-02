@@ -1465,15 +1465,15 @@ on the one path that produces a fresh entry, and the unit under test is
 
 ## Ship checklist
 
-- [ ] `LLM_API_KEY=dummy uv run python -m tests.test_core` — 28 `ok`
-- [ ] `LLM_API_KEY=dummy uv run python -m tests.test_cards` — 10 `ok`
-- [ ] `git grep -n "import discord" -- core/ exporters/` — no hits
-- [ ] `git grep -n "storage" -- channels/` — comments only
-- [ ] `git grep -n '"Unfiled"' -- core channels exporters` — one hit, the schema
-- [ ] no new dependency in `pyproject.toml`
-- [ ] no prompt file changed: `git diff --stat core/prompts/` is empty
-- [ ] nothing on any new card can be clicked, dragged or closed
-- [ ] `SESSION_RECAP` unset ⇒ the bot posts nothing it was not asked for
+- [x] `LLM_API_KEY=dummy uv run python -m tests.test_core` — 28 `ok`
+- [x] `LLM_API_KEY=dummy uv run python -m tests.test_cards` — 10 `ok`
+- [x] `git grep -n "import discord" -- core/ exporters/` — no hits
+- [x] `git grep -n "storage" -- channels/` — comments only
+- [x] `git grep -n '"Unfiled"' -- core channels exporters` — one hit, the schema
+- [x] no new dependency in `pyproject.toml`
+- [x] no prompt file changed: `git diff --stat core/prompts/` is empty
+- [x] nothing on any new card can be clicked, dragged or closed
+- [x] `SESSION_RECAP` unset ⇒ the bot posts nothing it was not asked for
 
 ## Still not done after this plan
 
