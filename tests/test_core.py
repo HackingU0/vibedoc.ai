@@ -52,6 +52,47 @@ def test_thread_key_folds_the_way_storage_does():
     assert UNFILED == "Unfiled"
 
 
+def test_digest_buckets():
+    from core.digest import STALE_AFTER, summarise, threads
+
+    now = datetime(2025, 10, 12, 3, 0, tzinfo=timezone.utc)
+
+    def D(component, stage, ago_days, **fields):
+        return LoggedEntry(
+            raw_text="x", author="Eli",
+            created_at=now - timedelta(days=ago_days),
+            record=R(stage=stage, component=component, **fields),
+        )
+
+    entries = [
+        D("intake", Stage.PROBLEM, 3, problem_statement="jams on two blocks"),
+        D("Intake", Stage.DECISION, 2, alternatives_considered=["compliant"],
+          rationale="fits the current mount"),
+        D("slide", Stage.BUILD, 4),
+        D("arm", Stage.TEST, 4),
+        D("claw", Stage.IDEATION, STALE_AFTER.days + 5),
+        D("odometry", Stage.TEST, 1, problem_statement="drifts",
+          alternatives_considered=["two pods"], rationale="cheaper",
+          test_evidence="0.4in over 10ft"),
+    ]
+
+    names = [t.component for t in threads(entries)]
+    assert "intake" in names and "Intake" not in names and len(names) == 5
+
+    got = summarise(entries, now=now)
+    assert [t.component for t in got.almost] == ["intake"]
+    assert [t.component for t in got.untested] == ["slide"]
+    assert [t.component for t in got.stale] == ["claw"]
+    assert got.total == 5 and got.complete == 1
+    listed = {t.component for t in [*got.almost, *got.untested, *got.stale]}
+    assert "odometry" not in listed
+    assert "arm" not in listed, "a test-stage thread was tested"
+    assert len(listed) == 3
+    assert {t.component: t.stages for t in threads(entries)}["intake"] == (
+        Stage.PROBLEM, Stage.DECISION
+    )
+
+
 def test_patch_gate():
     rec = R(missing_fields=["rationale"], followup_question="why?")
 

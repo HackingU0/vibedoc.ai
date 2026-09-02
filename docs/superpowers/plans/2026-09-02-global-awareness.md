@@ -364,7 +364,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
   - `summarise(entries: list[LoggedEntry], *, now: datetime) -> Digest`
   - `STALE_AFTER: timedelta`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
   In `tests/test_core.py`:
 
@@ -420,7 +420,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
           == (Stage.PROBLEM, Stage.DECISION)
   ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
   ```bash
   LLM_API_KEY=dummy uv run python -m tests.test_core
@@ -428,7 +428,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
 
   Expected: `ModuleNotFoundError: No module named 'core.digest'`.
 
-- [ ] **Step 3: Write `core/digest.py`**
+- [x] **Step 3: Write `core/digest.py`**
 
   ```python
   """Design-thread health: what the season still needs, thread by thread.
@@ -571,7 +571,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
       )
   ```
 
-- [ ] **Step 4: Run it and watch it pass**
+- [x] **Step 4: Run it and watch it pass**
 
   ```bash
   LLM_API_KEY=dummy uv run python -m tests.test_core
@@ -579,7 +579,7 @@ Pure derivation, no I/O. The `core/progress.py` of the component axis.
 
   Expected: **24** `ok`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add core/digest.py tests/test_core.py
