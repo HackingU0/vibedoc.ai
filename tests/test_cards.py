@@ -209,6 +209,28 @@ def test_log_card_lists_related_work():
     }
 
 
+def test_recap_card_is_short():
+    from channels.discord_bot import _recap_card
+    from core.digest import Thread
+    from core.pipeline import Recap
+
+    recap = Recap(entries=7, threads=[
+        Thread(
+            "intake", 3, ("Eli",), (Stage.BUILD,),
+            frozenset({"test_evidence"}), NOW,
+        ),
+        Thread(
+            "slide", 2, ("Kim",), (Stage.DECISION,),
+            frozenset({"rationale", "test_evidence"}), NOW,
+        ),
+    ])
+    card = _recap_card(recap)
+    assert "7" in card.description
+    assert len(card.fields) == 1
+    assert "intake" in card.fields[0].value and "slide" in card.fields[0].value
+    assert len(card.fields[0].value) <= 1024
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

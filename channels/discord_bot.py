@@ -2,6 +2,7 @@
 
 import logging
 import os
+from datetime import datetime
 
 import discord
 from discord import app_commands
@@ -37,6 +38,9 @@ CAPTURED = "📓"
 BOARD_MAX_CARDS = 10
 DIGEST_MAX_THREADS = 8
 RECALL_FIELD_CHARS = 800
+RECAP_MAX_THREADS = 5
+
+SESSION_IDLE_SECONDS = float(os.getenv("SESSION_IDLE_MINUTES", "90")) * 60
 
 BUCKETS = (
     ("almost", "One field from done"),
@@ -268,6 +272,29 @@ def _recall_card(recall) -> discord.Embed:
     return embed
 
 
+def _recap_card(recap) -> discord.Embed:
+    """Render the incomplete threads left by tonight's session."""
+    embed = discord.Embed(
+        title="Tonight's session",
+        description=(
+            f"{recap.entries} entries captured · {len(recap.threads)} thread"
+            f"{'' if len(recap.threads) == 1 else 's'} still open"
+        ),
+        colour=discord.Colour.blurple(),
+    )
+    lines = [
+        f"**{thread.component}** — needs {_needs(thread.gaps)}"
+        for thread in recap.threads[:RECAP_MAX_THREADS]
+    ]
+    if len(recap.threads) > RECAP_MAX_THREADS:
+        lines.append(f"+{len(recap.threads) - RECAP_MAX_THREADS} more")
+    embed.add_field(
+        name="Still missing", value="\n".join(lines)[:1024], inline=False,
+    )
+    embed.set_footer(text="/digest for the whole season")
+    return embed
+
+
 async def _receipt_reaction(message: discord.Message) -> None:
     """Mark a message as captured. Never allowed to break the capture itself."""
     try:
@@ -319,6 +346,11 @@ class Bot(discord.Client):
         # One thought is often four messages. Buffer per person per channel and
         # hand core the whole burst; see core/inbox.py.
         self.bursts = Coalescer(self._flush_burst)
+        # Reuse the same reset-on-activity timer for one recap per quiet-ended
+        # channel session. It never size-flushes and is not drained on shutdown.
+        self.sessions = Coalescer(
+            self._session_ended, quiet=SESSION_IDLE_SECONDS, max_items=10**6
+        )
 
     async def setup_hook(self):
         await pipeline.init_schema()
@@ -387,6 +419,8 @@ class Bot(discord.Client):
             log.exception("dropping message %s", message.id)
 
     async def _handle(self, message: discord.Message):
+        await self.sessions.add(str(message.channel.id), message.created_at)
+
         # A reply to one of our questions is an answer, not a new record, and it
         # is never buffered — it is already a deliberate, complete thought.
         if message.reference and message.reference.message_id:
@@ -405,6 +439,14 @@ class Bot(discord.Client):
                 return
 
         await self.bursts.add(f"{message.channel.id}:{message.author.id}", message)
+
+    async def _session_ended(self, key: str, stamps: list[datetime]) -> None:
+        recap = await pipeline.session_recap(channel="discord", since=min(stamps))
+        if recap is None:
+            return
+        channel = self.get_channel(int(key))
+        if channel is not None:
+            await channel.send(embed=_recap_card(recap))
 
     async def _flush_burst(self, key: str, messages: list[discord.Message]) -> None:
         """One person's burst, parsed as one unit.

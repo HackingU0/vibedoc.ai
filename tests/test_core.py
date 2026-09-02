@@ -165,6 +165,40 @@ def test_prior_work_is_log_only_and_skips_the_current_thread():
     assert got == [] and not search.await_count
 
 
+def test_session_recap_stays_quiet_unless_it_has_something():
+    from unittest.mock import AsyncMock
+
+    from core import pipeline as P
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=3)
+
+    def L(component, **fields):
+        return LoggedEntry(
+            raw_text="x", author="Eli", created_at=now,
+            record=R(component=component, **fields),
+        )
+
+    full = dict(
+        problem_statement="p", alternatives_considered=["a"],
+        rationale="r", test_evidence="t",
+    )
+    holes = [L("intake"), L("intake"), L("slide")]
+    complete = [L("odometry", **full), L("odometry", **full)]
+
+    def run(rows, enabled=True):
+        with patch.object(P, "RECAP_ENABLED", enabled), \
+             patch.object(storage, "list_entries", new=AsyncMock(return_value=rows)):
+            return asyncio.run(P.session_recap(channel="discord", since=since))
+
+    got = run(holes)
+    assert got and got.entries == 3
+    assert {thread.component for thread in got.threads} == {"intake", "slide"}
+    assert run(holes, enabled=False) is None
+    assert run(holes[:1]) is None
+    assert run(complete) is None
+
+
 def test_patch_gate():
     rec = R(missing_fields=["rationale"], followup_question="why?")
 

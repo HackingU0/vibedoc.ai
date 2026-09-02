@@ -1182,7 +1182,7 @@ on the one path that produces a fresh entry, and the unit under test is
   `pipeline.session_recap(*, channel: str, since: datetime) -> Optional[Recap]`,
   `discord_bot._recap_card(recap) -> discord.Embed`.
 
-- [ ] **Step 1: Write the failing core test**
+- [x] **Step 1: Write the failing core test**
 
   In `tests/test_core.py`:
 
@@ -1222,12 +1222,12 @@ on the one path that produces a fresh entry, and the unit under test is
       assert run(complete) is None
   ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
   Expected: `AttributeError: module 'core.pipeline' has no attribute
   'session_recap'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
   In `core/pipeline.py`, import `os` and explicitly initialize dotenv in this
   module (`from dotenv import load_dotenv`; `load_dotenv()`) before reading the
@@ -1280,11 +1280,11 @@ on the one path that produces a fresh entry, and the unit under test is
   `from .digest import Digest, Thread, summarise, threads as digest_threads`
   to the import added in Task 3.
 
-- [ ] **Step 4: Run it and watch it pass**
+- [x] **Step 4: Run it and watch it pass**
 
   Run: `LLM_API_KEY=dummy uv run python -m tests.test_core` → **28** `ok`.
 
-- [ ] **Step 5: The card**
+- [x] **Step 5: The card**
 
   In `tests/test_cards.py`:
 
@@ -1337,7 +1337,7 @@ on the one path that produces a fresh entry, and the unit under test is
       return embed
   ```
 
-- [ ] **Step 6: The timer**
+- [x] **Step 6: The timer**
 
   In `channels/discord_bot.py`:
 
@@ -1392,7 +1392,7 @@ on the one path that produces a fresh entry, and the unit under test is
 
   `datetime` joins the imports at the top of the file.
 
-- [ ] **Step 7: `.env.example`**
+- [x] **Step 7: `.env.example`**
 
   Under the Discord section:
 
@@ -1413,7 +1413,7 @@ on the one path that produces a fresh entry, and the unit under test is
   DIGEST_STALE_DAYS=10
   ```
 
-- [ ] **Step 8: Run both suites and commit**
+- [x] **Step 8: Run both suites and commit**
 
   Expected: **28** `ok` and **10** `ok`.
 

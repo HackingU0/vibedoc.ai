@@ -12,15 +12,19 @@ is why adding a web channel later is a zero-change operation on core/.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
+from dotenv import load_dotenv
+
 from . import followup, progress, storage, triage
 from .agent import apply_followup_answer, apply_peer_contribution, log_session, parse_design_record
-from .digest import Digest, summarise
+from .digest import Digest, Thread, summarise, threads as digest_threads
 from .schema import LoggedEntry, Stage, thread_key
 
+load_dotenv()
 log = logging.getLogger(__name__)
 
 # The window the open-question budget looks back over. A season-long count
@@ -36,6 +40,11 @@ STATUS_WINDOW = timedelta(days=7)
 # Deliberately NOT scripts/kanban.py's BOARD_DAYS — an export is something
 # you go and generate, a card answers "right now".
 BOARD_WINDOW = timedelta(days=7)
+
+RECAP_ENABLED = os.getenv("SESSION_RECAP", "off").strip().lower() in {
+    "1", "on", "true",
+}
+RECAP_MIN_ENTRIES = 2
 
 
 @dataclass
@@ -85,6 +94,14 @@ class Recall:
     query: str
     hits: list[tuple[LoggedEntry, float]]
     enabled: bool
+
+
+@dataclass
+class Recap:
+    """Incomplete component threads left by one quiet-ended session."""
+
+    entries: int
+    threads: list[Thread]
 
 
 async def init_schema() -> None:
@@ -370,3 +387,16 @@ async def recall(*, query: str, limit: int = 5) -> Recall:
         hits=await storage.search(query, limit=limit),
         enabled=storage.embeddings_enabled(),
     )
+
+
+async def session_recap(*, channel: str, since: datetime) -> Optional[Recap]:
+    """Return a useful session recap, or None when silence is better."""
+    if not RECAP_ENABLED:
+        return None
+
+    entries = await storage.list_entries(since=since, channel=channel)
+    if len(entries) < RECAP_MIN_ENTRIES:
+        return None
+
+    open_threads = [thread for thread in digest_threads(entries) if thread.gaps]
+    return Recap(len(entries), open_threads) if open_threads else None
