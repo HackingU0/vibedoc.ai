@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS entries (
     channel_message_id  text,
     author              text,
     created_at          timestamptz NOT NULL,
+
+    -- The author's role labels as the channel reported them, whole. jsonb for
+    -- the same reason followups is: a list whose shape may still move, and one
+    -- that must never be recomputed from a live roster — see LoggedEntry.
+    author_roles jsonb NOT NULL DEFAULT '[]'::jsonb,
+
     raw_text            text NOT NULL,
     record              jsonb NOT NULL,
 
@@ -80,6 +86,13 @@ CREATE TABLE IF NOT EXISTS entries (
     ) STORED
 );
 
+-- CREATE TABLE IF NOT EXISTS never adds a column to a table that already
+-- exists, so a field introduced after the first deploy needs its own
+-- statement. Rows written before it land with '[]' — honest: nobody knew
+-- those authors' roles at the time.
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS
+    author_roles jsonb NOT NULL DEFAULT '[]'::jsonb;
+
 CREATE INDEX IF NOT EXISTS entries_created_at_idx ON entries (created_at);
 CREATE INDEX IF NOT EXISTS entries_component_idx  ON entries (component_key);
 CREATE INDEX IF NOT EXISTS entries_stage_idx      ON entries (stage);
@@ -100,8 +113,8 @@ CREATE INDEX IF NOT EXISTS entries_embedding_idx
     ON entries USING hnsw (embedding vector_cosine_ops);
 """
 
-_COLUMNS = """entry_id, channel, source, channel_message_id, author, created_at,
-              raw_text, record, followups, contributions"""
+_COLUMNS = """entry_id, channel, source, channel_message_id, author, author_roles,
+              created_at, raw_text, record, followups, contributions"""
 
 
 # ── Connection ────────────────────────────────────────────────────────────────
@@ -190,6 +203,8 @@ def _vector_literal(values: list[float]) -> str:
 def _to_entry(row: asyncpg.Record) -> LoggedEntry:
     data = dict(row)
     raw = data.pop("record")
+    roles = data.pop("author_roles", None) or []
+    data["author_roles"] = json.loads(roles) if isinstance(roles, str) else roles
     followups = data.pop("followups", None) or []
     contributions = data.pop("contributions", None) or []
     return LoggedEntry(
@@ -221,7 +236,7 @@ async def save(entry: LoggedEntry, *, reembed: bool = True) -> LoggedEntry:
         await conn.execute(
             f"""
             INSERT INTO entries ({_COLUMNS}, embedding)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::vector)
+            VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::vector)
             ON CONFLICT (entry_id) DO UPDATE SET
                 record        = EXCLUDED.record,
                 followups     = EXCLUDED.followups,
@@ -229,7 +244,8 @@ async def save(entry: LoggedEntry, *, reembed: bool = True) -> LoggedEntry:
                 embedding     = COALESCE(EXCLUDED.embedding, entries.embedding)
             """,
             entry.entry_id, entry.channel, entry.source, entry.channel_message_id,
-            entry.author, entry.created_at, entry.raw_text,
+            entry.author, json.dumps(entry.author_roles),
+            entry.created_at, entry.raw_text,
             entry.record.model_dump_json(),
             json.dumps([t.model_dump(mode="json") for t in entry.followups]),
             json.dumps([c.model_dump(mode="json") for c in entry.contributions]),

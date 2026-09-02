@@ -10,3 +10,7 @@ data/
 .agents/
 .claude/
 skills-lock.json
+
+# Rendered exports — regenerate with scripts/export.py and scripts/kanban.py
+board.md
+notebook.md

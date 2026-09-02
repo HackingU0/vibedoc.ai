@@ -73,6 +73,15 @@ Do not build these unless asked directly:
   spans in `core/progress.py`, which are *derived* from captured entries
   (who was on what, when) and are read-only. Out means: creating a task by
   command, assignment, owners, due dates, "mark done". Nothing a human can edit.
+  `exporters/kanban.py` sits on the same side of that line as `progress.py`:
+  every card *is* a span, the columns are design-cycle stages rather than
+  To Do / Doing / Done, and there is nothing to drag. Team lanes come from the
+  author's role labels, which `channels/` reports verbatim onto
+  `LoggedEntry.author_roles` and `progress.team()` reads: a role whose name
+  starts with a number ("5898 Andromeda") is the team, everything else
+  ("Team Member", "Mentor") is not. Captured per entry, never looked up from a
+  live roster, so a board rendered next season still shows who was on which
+  team then.
 - Parts inventory
 - Match/competition data analysis
 - Multi-team permissions or auth systems
@@ -125,7 +134,8 @@ DiscordFTCAgent/
 │   └── discord_bot.py         # ears and mouth only
 │
 ├── exporters/                 # outputs — notebook is only the first one
-│   └── notebook.py            # list[LoggedEntry] -> markdown, pure
+│   ├── notebook.py            # list[LoggedEntry] -> markdown, pure
+│   └── kanban.py              # spans as a team x stage board, pure
 │
 ├── tests/
 │   ├── test_core.py           # pure-logic checks, no API, no DB
@@ -136,7 +146,8 @@ DiscordFTCAgent/
 │   ├── Smoke.py               # connectivity check: ambient + reply paths
 │   ├── try_parse.py           # scoring harness over samples.py
 │   ├── try_conversation.py    # rounds + nags
-│   └── export.py              # (todo) storage -> notebook, ten lines
+│   ├── export.py              # storage -> notebook
+│   └── kanban.py              # storage -> board, last BOARD_DAYS days
 │
 ├── data/                      # gitignored
 ├── .env / .env.example
@@ -440,6 +451,14 @@ Working and verified locally:
 - **four prompts** in `core/prompts/`
 - **`exporters/notebook.py`** — grouped by component, coverage table, gaps
   reported per thread. Pure function, ~175 lines.
+- **`exporters/kanban.py`** — team lanes x design-cycle columns over
+  `progress.spans()`. Read-only, no model call, no new table or schema field.
+  Lanes come from `progress.team()`; an author with no team role goes to a
+  `No tag` lane. Verified against a real pgvector container: the `author_roles`
+  ALTER reaches a table that predates the column, rows written before it read
+  back as `[]`, and `save()`'s reordered positional arguments round-trip. `scripts/kanban.py` does the DB read.
+  No `/board` command yet — §9's rule, look at a real rendered board before
+  wiring Discord.
 - **`core/storage.py`** — postgres + pgvector. Tested against a real pgvector
   container: idempotent schema, upsert, follow-up lookup, redelivery dedup, all
   filters, vector search, and DB → notebook end to end.
@@ -489,11 +508,18 @@ Two findings worth keeping:
 
 - `tests/samples.py` and `tests/conversations.py` are invented. Replacing both
   with real team transcripts is still the blocker for a trustworthy baseline.
-- `scripts/export.py` does not exist, so storage is not wired to notebook export.
 - The bot has never connected to Discord
 
 ### Known defects
 
+- The board reads a team role as "name starts with a number". That fits FTC,
+  where teams are numbered, and it has been checked against exactly one real
+  server. A role named "2nd place winner" would be read as a team. Widen it
+  only after seeing a server where it actually breaks.
+- Entries written before `author_roles` existed carry `[]` and land under
+  `No tag` forever — their authors' roles at the time are simply not known.
+  Backfilling from today's roster would be a guess, and a wrong one for anyone
+  who has changed teams or left.
 - `TASK_IDLE_MINUTES` (default 60) has never been measured against real channel
   history. Too small fragments one task into five spans; too large collapses a
   whole meeting into one. Settle it the way §9 settles everything else — with

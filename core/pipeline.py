@@ -85,6 +85,7 @@ async def ingest(
     author: Optional[str],
     created_at: datetime,
     raw_text: str,
+    author_roles: Optional[list[str]] = None,
     channel_message_id: Optional[str] = None,
     source: Literal["ambient", "log"] = "ambient",
     reply_to_message_id: Optional[str] = None,
@@ -93,6 +94,10 @@ async def ingest(
 
     `raw_text` is expected to be a whole burst already (core/inbox.py), not a
     single message — triage and the model both read better that way.
+
+    `author_roles` is whatever role labels the channel hangs on the author,
+    verbatim. Passed through untouched and stored on the entry — the judgment
+    about which of them names a team is progress.team()'s, not a channel's.
 
     `reply_to_message_id` is a Discord Reply target that did NOT resolve to an
     open bot-question (channels/discord_bot.py already tried that path and
@@ -148,6 +153,7 @@ async def ingest(
         source=source,
         channel_message_id=channel_message_id,
         author=author,
+        author_roles=author_roles or [],
         created_at=created_at,
         raw_text=raw_text,
         record=record,

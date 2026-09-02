@@ -252,8 +252,32 @@ to the person who ran the command.
 
 ## 8. Look at what it captured
 
-`scripts/export.py` does not exist yet, so nothing renders the notebook from
-the database. Read the table directly:
+Two renderers read the database. Start with the board — it is one screen, and
+it tells you immediately whether `author` tags and `component` came out usable:
+
+```bash
+uv run python -m scripts.kanban > board.md
+uv run python -m scripts.export > notebook.md
+```
+
+`board.md` is a markdown table; open it in an editor with a markdown preview,
+or paste it into any GitHub comment box. In a terminal the pipes do not line up
+and it is much harder to read than it looks.
+
+On the board, check:
+
+1. **Lanes are team roles, not people.** Everything under `No tag` means those
+   members have no role whose name starts with a number ("5898 Andromeda").
+   That is a server-side fix — give them the role — not a code one, and it only
+   applies from the next message on: roles are captured per entry, never
+   backfilled.
+2. **Cards sit in the stage you expect.** A card's column is its span's *last*
+   stage.
+3. **`●` vs `○` matches what actually happened.** Everything from tonight's
+   session showing `○` means `TASK_IDLE_MINUTES` is too small — this is the
+   first real chance to measure it, so write the number down.
+
+Then read the table directly:
 
 ```bash
 docker exec ftc-pg psql -U postgres -d ftcagent -c "

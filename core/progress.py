@@ -20,6 +20,7 @@ See docs/design/progress-tracker.md §2 for the line against CLAUDE.md §3.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Optional
@@ -39,6 +40,35 @@ load_dotenv()
 # the spans against what people remember doing — never against invented text,
 # which is the trap notes.md already documents for samples.py.
 IDLE = timedelta(minutes=int(os.getenv("TASK_IDLE_MINUTES", "60")))
+
+
+# Authors with no team label land here. A bin, not a team — it sorts last.
+# Deliberately not "Unfiled": exporters/notebook.py already uses that word for
+# a record with no component, and a board cell reading "Unfiled · Unfiled"
+# hides which of the two is actually missing. This one names the fix.
+UNTAGGED = "No tag"
+
+# What a team label looks like: a leading number. FTC teams are numbered, and
+# a server's team role is written "5898 Andromeda" or "5898" while its other
+# roles ("Team Member", "Mentor") are not. Leading digits are the whole test.
+# ponytail: a regex, not a roster table. If a server ever names a role
+# "2nd place winner" this mislabels it; add a TEAM_ROLE_PATTERN env var then,
+# not before.
+_TEAM_ROLE = re.compile(r"^\d+\b")
+
+
+def team(roles: list[str]) -> str:
+    """Which of an author's role labels names their team.
+
+    The channel reports the labels; this decides what they mean. That split is
+    §4's rule — `channels/` may not contain an `if`, and "is this role a team"
+    is exactly the kind of `if` that would otherwise end up there.
+
+    The role's own text is returned whole, not just the number: "5898 Andromeda"
+    is what the team calls itself, and §8's rule against normalising the team's
+    own wording applies to a lane header as much as to a summary.
+    """
+    return next((r for r in roles if _TEAM_ROLE.match(r.strip())), UNTAGGED)
 
 
 @dataclass(frozen=True)
@@ -63,6 +93,11 @@ class Span:
     ended_at: Optional[datetime]
     entry_ids: tuple[str, ...] = ()
     stages: tuple[Stage, ...] = ()
+    # Resolved from the role labels captured on the entries, never from a live
+    # roster — so a board rendered next season still shows who was on which
+    # team back then, including people who have left.
+    team: str = UNTAGGED
+
 
     @property
     def is_open(self) -> bool:
@@ -122,6 +157,7 @@ def spans(
                     ended_at=last_at if now - last_at > idle else None,
                     entry_ids=tuple(e.entry_id for e in group),
                     stages=tuple(e.record.stage for e in group),
+                    team=team(group[0].author_roles),
                 )
             )
     return sorted(out, key=lambda s: s.started_at)
@@ -146,3 +182,21 @@ def current(
         if s.author == author and s.is_open
     ]
     return max(live, key=lambda s: s.last_at) if live else None
+
+
+def by_team_and_stage(runs: list[Span]) -> dict[str, dict[Stage, list[Span]]]:
+    """Group spans into board cells: team lane x design-cycle column.
+
+    A span's column is its **last** stage — the same "if it covers several
+    stages, take the latest" rule design_entry.md applies within one message,
+    for the same reason: where work has got to is where it belongs on a board.
+
+    Still not task management. Every cell holds spans, so nothing on the board
+    was created by a person, is assigned to anyone, or can be moved by hand.
+    Cards appear because people talked and grey out because they stopped.
+    """
+    board: dict[str, dict[Stage, list[Span]]] = {}
+    for span in runs:
+        lane = board.setdefault(span.team, {})
+        lane.setdefault(span.stages[-1], []).append(span)
+    return {k: board[k] for k in sorted(board, key=lambda t: (t == UNTAGGED, t))}

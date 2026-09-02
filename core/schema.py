@@ -304,6 +304,16 @@ class LoggedEntry(BaseModel):
     source: Literal["ambient", "log"] = "ambient"
     channel_message_id: Optional[str] = None
     author: Optional[str] = None
+    # The role/tag labels the channel attaches to the author, verbatim and
+    # unfiltered. A plain list of strings, so core still knows nothing about
+    # Discord — the same reason `channel` is a label rather than a guild id.
+    #
+    # A fact, not a judgment: the channel reports what the labels ARE and never
+    # decides what they MEAN. Which one names a team is core's call, in
+    # progress.team(). Captured per entry rather than looked up at export time
+    # because a live roster read only knows today's members, and would
+    # silently relabel — or unlabel — everyone who has since left.
+    author_roles: list[str] = Field(default_factory=list)
     # When the work happened, as the channel knows it. Defaults to now for
     # hand-built and script-driven entries; a channel should pass the real
     # event time instead (Discord's message.created_at is already UTC-aware).

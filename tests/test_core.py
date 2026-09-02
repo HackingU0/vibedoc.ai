@@ -16,7 +16,7 @@ from unittest.mock import patch
 from core import followup, storage, triage
 from core.followup import apply_patch as _apply_patch
 from core.inbox import Coalescer
-from core.progress import current, spans
+from core.progress import UNTAGGED, by_team_and_stage, current, spans
 from core.schema import (
     DesignRecord,
     FollowupPatch,
@@ -25,7 +25,9 @@ from core.schema import (
     Stage,
     Subteam,
 )
-from exporters.notebook import render_notebook
+from exporters.kanban import IDLE as QUIET
+from exporters.kanban import LIVE, render_board
+from exporters.notebook import STAGE_ORDER, UNFILED, render_notebook
 from tests.samples import SAMPLES
 
 
@@ -642,6 +644,52 @@ def test_implicit_peer_merge_routing():
     result = asyncio.run(scenario([ann_recent], "ann", "intake", must_not_merge))
     assert result.entry.author == "ann"
 
+
+
+def test_board():
+    now = datetime(2025, 10, 12, 3, 0, tzinfo=timezone.utc)
+
+    def B(author, roles, component, stage, ago):
+        return LoggedEntry(
+            raw_text="x", author=author, author_roles=roles,
+            created_at=now - timedelta(minutes=ago),
+            record=R(stage=stage, component=component),
+        )
+
+    ANDROMEDA = "5898 Andromeda"
+    entries = [
+        B("Eli", ["@everyone", ANDROMEDA, "Team Member"], "intake", Stage.BUILD, 5),
+        B("Kim", [ANDROMEDA, "Mentor"], "odometry", Stage.TEST, 600),
+        B("Sam", ["7161"], "arm", Stage.PROBLEM, 5),       # bare number is a team
+        B("Alex", ["Team Member"], "slide", Stage.BUILD, 5),  # no team role
+        B("Jo", [], "claw", Stage.BUILD, 5),               # no roles at all
+    ]
+
+    board = by_team_and_stage(spans(entries, now=now))
+    assert list(board) == [ANDROMEDA, "7161", UNTAGGED], "lane order, untagged last"
+    # The team role wins over the non-team ones regardless of position, and its
+    # own wording survives whole — not just the number.
+    assert board[ANDROMEDA].keys() == {Stage.BUILD, Stage.TEST}
+    assert len(board[UNTAGGED][Stage.BUILD]) == 2, "Alex and Jo share the bin"
+    # A span sits in its LAST stage's column, not its first.
+    assert board[ANDROMEDA][Stage.TEST][0].component == "odometry"
+    # 600 minutes quiet against the default 60-minute window.
+    assert not board[ANDROMEDA][Stage.TEST][0].is_open
+    assert board[ANDROMEDA][Stage.BUILD][0].is_open
+
+    text = render_board(entries, now=now)
+    head, *rows = [l for l in text.splitlines() if l.startswith("|")]
+    assert head.count("|") == len(STAGE_ORDER) + 2, "column count drifted"
+    assert all(r.count("|") == head.count("|") for r in rows), "ragged row"
+    assert f"{LIVE} intake" in text and f"{QUIET} odometry" in text
+    # The team's own wording, whole — the lane is not reduced to "5898".
+    assert f"**{ANDROMEDA}**" in text
+    assert "\u00b7 Eli" in text and "\u00b7 Alex" in text
+    assert "2 teams" in text, "the untagged bin is not a team"
+    # The lane bin and the no-component bin must not share a word.
+    assert UNTAGGED != UNFILED
+
+    assert "Nothing on the go" in render_board([], now=now)
 
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):

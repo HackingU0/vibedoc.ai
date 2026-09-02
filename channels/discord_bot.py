@@ -39,6 +39,20 @@ COVERAGE = [
 ]
 
 
+def _roles(user) -> list[str]:
+    """The author's role names, in Discord's own order.
+
+    Reported, not interpreted — §4's rule. `progress.team()` decides which of
+    these names a team; putting that `if` here is exactly the drift this file
+    exists to avoid.
+
+    No Members intent needed: a guild message carries its author's roles in the
+    payload, so `message.author` is already a Member. In a DM it is a plain
+    User with no roles, hence the getattr.
+    """
+    return [r.name for r in getattr(user, "roles", ())]
+
+
 def _card(result) -> discord.Embed:
     """The /log receipt, as a card.
 
@@ -133,6 +147,7 @@ class LogModal(discord.ui.Modal, title="Log what you worked on"):
             channel="discord",
             source="log",
             author=interaction.user.display_name,
+            author_roles=_roles(interaction.user),
             created_at=interaction.created_at,
             raw_text=str(self.text),
         )
@@ -231,6 +246,7 @@ class Bot(discord.Client):
         result = await pipeline.ingest(
             channel="discord",
             author=first.author.display_name,
+            author_roles=_roles(first.author),
             created_at=first.created_at,
             channel_message_id=str(first.id),
             raw_text="\n".join(m.content for m in messages),
