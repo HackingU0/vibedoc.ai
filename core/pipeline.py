@@ -18,7 +18,7 @@ from typing import Literal, Optional
 
 from . import followup, progress, storage, triage
 from .agent import apply_followup_answer, apply_peer_contribution, log_session, parse_design_record
-from .schema import LoggedEntry
+from .schema import LoggedEntry, Stage
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +29,12 @@ BUDGET_WINDOW = timedelta(hours=12)
 # How far back /status looks. A season-long window would answer "what are you
 # on right now" with something from October.
 STATUS_WINDOW = timedelta(days=7)
+
+# How far back the board looks. Same reasoning as STATUS_WINDOW: a
+# season-long window answers "what is on the go" with something from October.
+# Deliberately NOT scripts/kanban.py's BOARD_DAYS — an export is something
+# you go and generate, a card answers "right now".
+BOARD_WINDOW = timedelta(days=7)
 
 
 @dataclass
@@ -56,6 +62,18 @@ class Status:
     span: Optional["progress.Span"]
     gaps: frozenset[str] = frozenset()
     entries: int = 0
+
+
+@dataclass
+class Board:
+    """Every open and recently-closed span, laned by team.
+
+    Read-only and derived, exactly like Status: this creates nothing, assigns
+    nothing and closes nothing. CLAUDE.md §3.
+    """
+
+    lanes: dict[str, dict[Stage, list[progress.Span]]]
+    since: datetime
 
 
 async def init_schema() -> None:
@@ -298,3 +316,13 @@ async def status(*, channel: str, author: Optional[str]) -> Status:
         if (e.record.component or "").strip().lower() == key
     ]
     return Status(span, frozenset(followup.thread_gaps(thread)), len(thread))
+
+
+async def board(*, channel: str) -> Board:
+    """One query, no model call. The grouping is progress.py's, not ours."""
+    now = datetime.now(timezone.utc)
+    since = now - BOARD_WINDOW
+    entries = await storage.list_entries(since=since, channel=channel)
+    return Board(
+        progress.by_team_and_stage(progress.spans(entries, now=now)), since
+    )

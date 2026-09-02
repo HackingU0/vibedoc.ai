@@ -532,6 +532,49 @@ def test_status():
     assert asyncio.run(scenario("nobody")).span is None
 
 
+def test_board_command():
+    from core.pipeline import BOARD_WINDOW, board
+    from unittest.mock import AsyncMock
+
+    now = datetime.now(timezone.utc)
+
+    def at(age, component, stage, author="ann"):
+        return LoggedEntry(
+            raw_text="x",
+            author=author,
+            author_roles=["5898 Andromeda"],
+            created_at=now - age,
+            record=R(component=component, stage=stage),
+        )
+
+    recent = [
+        at(timedelta(minutes=30), "intake", Stage.BUILD),
+        at(timedelta(hours=2), "odometry", Stage.TEST, author="bo"),
+    ]
+    old = at(BOARD_WINDOW + timedelta(minutes=1), "old arm", Stage.PROBLEM)
+
+    async def rows_in_window(*, since, channel):
+        assert channel == "discord"
+        return [entry for entry in [*recent, old] if entry.created_at >= since]
+
+    list_entries = AsyncMock(side_effect=rows_in_window)
+    before = datetime.now(timezone.utc)
+    with patch.object(storage, "list_entries", new=list_entries):
+        got = asyncio.run(board(channel="discord"))
+    after = datetime.now(timezone.utc)
+
+    assert got.lanes == by_team_and_stage(spans(recent, now=after))
+    assert all(
+        span.component != "old arm"
+        for lane in got.lanes.values()
+        for cards in lane.values()
+        for span in cards
+    )
+    _, kwargs = list_entries.await_args
+    assert before - BOARD_WINDOW <= kwargs["since"] <= after - BOARD_WINDOW
+    assert got.since == kwargs["since"], "the card footer must use the query window"
+
+
 def test_contribution_roundtrip():
     from core.schema import Contribution
 
@@ -696,5 +739,4 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
             print(f"ok  {name}")
-
 
