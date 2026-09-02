@@ -37,6 +37,8 @@ CAPTURED = "📓"
 # characters — measure before making it cleverer.
 BOARD_MAX_CARDS = 10
 DIGEST_MAX_THREADS = 8
+# Below the 1024 field cap on purpose: five hits at this size leave room under
+# the 6000-character whole-embed limit, which /ask is the only card to approach.
 RECALL_FIELD_CHARS = 800
 RECAP_MAX_THREADS = 5
 
@@ -44,7 +46,7 @@ SESSION_IDLE_SECONDS = float(os.getenv("SESSION_IDLE_MINUTES", "90")) * 60
 
 BUCKETS = (
     ("almost", "One field from done"),
-    ("untested", "Decided, never tested"),
+    ("untested", "No results recorded"),
     ("stale", "Nobody has touched these"),
 )
 
@@ -206,14 +208,26 @@ def _board_card(board) -> discord.Embed:
 
 
 def _digest_card(digest) -> discord.Embed:
-    total = (
-        f"{digest.total} design thread{'' if digest.total == 1 else 's'} · "
-        f"{digest.complete} complete"
-    )
-    if not (digest.almost or digest.untested or digest.stale):
+    listed = len(digest.almost) + len(digest.untested) + len(digest.stale)
+    # Threads with holes that matched no bucket: still being worked on. The
+    # counts deliberately do not add up to `total` — followup.py chases those,
+    # one question at a time — but the card must say so, or an empty board of
+    # buckets reads as "nothing is missing" when half the season has holes.
+    in_progress = digest.total - digest.complete - listed
+    counts = [
+        f"{digest.total} design thread{'' if digest.total == 1 else 's'}",
+        f"{digest.complete} complete",
+    ]
+    if in_progress:
+        counts.append(f"{in_progress} in progress")
+    total = " · ".join(counts)
+
+    if not listed:
         return discord.Embed(
-            title="Nothing missing", description=total,
-            colour=discord.Colour.green(),
+            title="Nothing to chase" if in_progress else "Nothing missing",
+            description=total,
+            colour=discord.Colour.blurple() if in_progress
+            else discord.Colour.green(),
         )
 
     embed = discord.Embed(

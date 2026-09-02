@@ -81,13 +81,15 @@ def test_digest_buckets():
 
     got = summarise(entries, now=now)
     assert [t.component for t in got.almost] == ["intake"]
-    assert [t.component for t in got.untested] == ["slide"]
+    # "arm" reached the test stage and still has no test_evidence: they ran
+    # it and never wrote the numbers down, which is the same hole as never
+    # having tested at all.
+    assert {t.component for t in got.untested} == {"slide", "arm"}
     assert [t.component for t in got.stale] == ["claw"]
     assert got.total == 5 and got.complete == 1
     listed = {t.component for t in [*got.almost, *got.untested, *got.stale]}
-    assert "odometry" not in listed
-    assert "arm" not in listed, "a test-stage thread was tested"
-    assert len(listed) == 3
+    assert "odometry" not in listed, "a complete thread is counted, never listed"
+    assert len(listed) == 4
     assert {t.component: t.stages for t in threads(entries)}["intake"] == (
         Stage.PROBLEM, Stage.DECISION
     )

@@ -123,9 +123,16 @@ def test_digest_card_lists_buckets_and_counts_the_rest():
             last_at=NOW - timedelta(days=ago_days),
         )
 
-    empty = _digest_card(Digest([], [], [], total=3, complete=3))
-    assert "Nothing missing" in empty.title
-    assert "3" in empty.description
+    done = _digest_card(Digest([], [], [], total=3, complete=3))
+    assert "Nothing missing" in done.title
+    assert "3" in done.description
+
+    # No bucket matched, but four threads still have holes — they are simply
+    # being worked on. Saying "Nothing missing" here would be a lie on the one
+    # card whose whole job is reporting holes.
+    busy = _digest_card(Digest([], [], [], total=6, complete=2))
+    assert "Nothing missing" not in busy.title
+    assert "4 in progress" in busy.description
 
     card = _digest_card(Digest(
         almost=[T("intake", ["test_evidence"])],
@@ -134,7 +141,7 @@ def test_digest_card_lists_buckets_and_counts_the_rest():
     ))
     names = [field.name for field in card.fields]
     assert "One field from done" in names[0]
-    assert "Decided, never tested" in names[1]
+    assert "No results recorded" in names[1]
     assert len(names) == 2
     assert "intake" in card.fields[0].value
     assert "test_evidence" not in card.fields[0].value

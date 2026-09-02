@@ -20,6 +20,14 @@ STALE_AFTER = timedelta(days=int(os.getenv("DIGEST_STALE_DAYS", "10")))
 
 @dataclass(frozen=True)
 class Thread:
+    """One component's design line, rolled up.
+
+    `gaps` is the WHOLE thread's, never a sum of per-entry `missing_fields`:
+    a line whose problem, alternatives and rationale arrived in three separate
+    messages is complete, and reporting it as broken sends the team chasing
+    nothing (§10, found by reading the first rendered notebook).
+    """
+
     component: str
     entries: int
     authors: tuple[str, ...]
@@ -72,11 +80,12 @@ def summarise(entries: list[LoggedEntry], *, now: datetime) -> Digest:
             continue
         if len(thread.gaps) == 1:
             almost.append(thread)
-        elif (
-            Stage.TEST not in thread.stages
-            and "test_evidence" in thread.gaps
-            and {Stage.DECISION, Stage.BUILD} & set(thread.stages)
+        elif "test_evidence" in thread.gaps and (
+            {Stage.DECISION, Stage.BUILD, Stage.TEST} & set(thread.stages)
         ):
+            # Reaching the test stage does NOT exempt a thread: "we ran it and
+            # nobody wrote the numbers down" is the hole judges punish, and
+            # gating on the stage made it invisible in every bucket.
             untested.append(thread)
         elif now - thread.last_at >= STALE_AFTER:
             stale.append(thread)
