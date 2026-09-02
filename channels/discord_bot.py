@@ -36,6 +36,7 @@ CAPTURED = "📓"
 # characters — measure before making it cleverer.
 BOARD_MAX_CARDS = 10
 DIGEST_MAX_THREADS = 8
+RECALL_FIELD_CHARS = 800
 
 BUCKETS = (
     ("almost", "One field from done"),
@@ -224,6 +225,40 @@ def _digest_card(digest) -> discord.Embed:
     return embed
 
 
+def _recall_card(recall) -> discord.Embed:
+    """Render archive hits without synthesising or filtering them."""
+    if not recall.hits:
+        why = (
+            "Nothing in the notebook matches that yet."
+            if recall.enabled
+            else "Search is not configured — set EMBEDDING_API_KEY to switch "
+                 "it on. Everything else keeps working without it."
+        )
+        return discord.Embed(
+            title=recall.query[:256], description=why,
+            colour=discord.Colour.greyple(),
+        )
+
+    embed = discord.Embed(
+        title=recall.query[:256],
+        description=f"{len(recall.hits)} from the team's own records",
+        colour=discord.Colour.blurple(),
+    )
+    for entry, score in recall.hits:
+        when = f"<t:{int(entry.created_at.timestamp())}:D>"
+        body = " · ".join(
+            part for part in (entry.record.summary, entry.author) if part
+        )
+        embed.add_field(
+            name=f"{entry.record.component or UNFILED} · {score:.2f}"[:256],
+            value=(
+                f"**{entry.record.title}**\n{when} · {body}"
+            )[:RECALL_FIELD_CHARS],
+            inline=False,
+        )
+    return embed
+
+
 async def _receipt_reaction(message: discord.Message) -> None:
     """Mark a message as captured. Never allowed to break the capture itself."""
     try:
@@ -311,6 +346,13 @@ class Bot(discord.Client):
             await interaction.response.defer(thinking=True, ephemeral=True)
             result = await pipeline.digest(channel="discord")
             await interaction.followup.send(embed=_digest_card(result), ephemeral=True)
+
+        @self.tree.command(name="ask", description="Did we ever try this before?")
+        @app_commands.describe(query="What to look for in the team's own records")
+        async def _ask(interaction: discord.Interaction, query: str):
+            await interaction.response.defer(thinking=True, ephemeral=True)
+            result = await pipeline.recall(query=query)
+            await interaction.followup.send(embed=_recall_card(result), ephemeral=True)
 
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))

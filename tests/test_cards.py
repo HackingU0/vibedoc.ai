@@ -142,6 +142,47 @@ def test_digest_card_lists_buckets_and_counts_the_rest():
     assert all(len(field.value) <= 1024 for field in card.fields)
 
 
+def test_recall_card_separates_off_from_empty():
+    from channels.discord_bot import _recall_card
+    from core.pipeline import Recall
+    from core.schema import DesignRecord, LoggedEntry, Subteam
+
+    off = _recall_card(Recall("compliant wheels", [], enabled=False))
+    assert "not configured" in off.description.lower()
+
+    miss = _recall_card(Recall("compliant wheels", [], enabled=True))
+    assert "nothing" in miss.description.lower()
+    assert "not configured" not in miss.description.lower()
+
+    hit = LoggedEntry(
+        raw_text="x", author="Eli", created_at=NOW,
+        record=DesignRecord(
+            stage=Stage.DECISION, subteam=Subteam.MECHANICAL,
+            title="dual roller intake", summary="s", component="intake",
+            confidence=0.5,
+        ),
+    )
+    found = _recall_card(Recall("compliant wheels", [(hit, 0.82)], enabled=True))
+    assert "dual roller intake" in found.fields[0].value
+    assert "0.82" in found.fields[0].name
+
+    long_record = hit.record.model_copy(update={
+        "component": "component " * 100,
+        "title": "title " * 100,
+        "summary": "summary " * 1000,
+    })
+    long_hit = hit.model_copy(update={"record": long_record})
+    bounded = _recall_card(Recall(
+        "query " * 100, [(long_hit, 0.82)] * 5, enabled=True,
+    ))
+    assert len(bounded.title) <= 256
+    assert all(
+        len(field.name) <= 256 and len(field.value) <= 800
+        for field in bounded.fields
+    )
+    assert len(bounded) <= 6000
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

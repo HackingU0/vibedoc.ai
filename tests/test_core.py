@@ -115,6 +115,27 @@ def test_digest_reads_the_whole_season():
     assert [t.component for t in got.almost + got.untested + got.stale]
 
 
+def test_recall_reports_disabled_embeddings_as_a_state():
+    from unittest.mock import AsyncMock
+
+    from core.pipeline import recall
+
+    hit = LoggedEntry(
+        raw_text="x", author="Eli",
+        record=R(component="intake", title="dual roller"),
+    )
+    with patch.object(storage, "embeddings_enabled", return_value=True), \
+         patch.object(storage, "search", new=AsyncMock(return_value=[(hit, 0.82)])):
+        got = asyncio.run(recall(query="compliant wheels"))
+    assert got.enabled and got.query == "compliant wheels"
+    assert got.hits[0][1] == 0.82
+
+    with patch.object(storage, "embeddings_enabled", return_value=False), \
+         patch.object(storage, "search", new=AsyncMock(return_value=[])):
+        got = asyncio.run(recall(query="compliant wheels"))
+    assert got.hits == [] and not got.enabled
+
+
 def test_patch_gate():
     rec = R(missing_fields=["rationale"], followup_question="why?")
 

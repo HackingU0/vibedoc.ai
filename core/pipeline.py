@@ -77,6 +77,15 @@ class Board:
     since: datetime
 
 
+@dataclass
+class Recall:
+    """Search hits from the team's own records, never the game manual."""
+
+    query: str
+    hits: list[tuple[LoggedEntry, float]]
+    enabled: bool
+
+
 async def init_schema() -> None:
     """Initialize persistence without exposing storage to channel adapters."""
     await storage.init_schema()
@@ -333,3 +342,12 @@ async def digest(*, channel: str) -> Digest:
     """Derive what the whole season still needs, without a model call."""
     entries = await storage.list_entries(channel=channel)
     return summarise(entries, now=datetime.now(timezone.utc))
+
+
+async def recall(*, query: str, limit: int = 5) -> Recall:
+    """Search stored records directly, without model synthesis."""
+    return Recall(
+        query=query,
+        hits=await storage.search(query, limit=limit),
+        enabled=storage.embeddings_enabled(),
+    )

@@ -809,7 +809,7 @@ caller.
   keeps the complete embed below Discord's 6000-character ceiling without a
   general-purpose budget allocator.
 
-- [ ] **Step 1: Write the failing core test**
+- [x] **Step 1: Write the failing core test**
 
   In `tests/test_core.py`:
 
@@ -839,12 +839,12 @@ caller.
       assert got.hits == [] and not got.enabled
   ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
   Run: `LLM_API_KEY=dummy uv run python -m tests.test_core`
   Expected: `ImportError: cannot import name 'recall' from 'core.pipeline'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
   In `core/storage.py`, beside `embed()`:
 
@@ -891,11 +891,11 @@ caller.
       )
   ```
 
-- [ ] **Step 4: Run it and watch it pass**
+- [x] **Step 4: Run it and watch it pass**
 
   Run: `LLM_API_KEY=dummy uv run python -m tests.test_core` → **26** `ok`.
 
-- [ ] **Step 5: Write the failing card check**
+- [x] **Step 5: Write the failing card check**
 
   In `tests/test_cards.py`:
 
@@ -938,7 +938,7 @@ caller.
       assert len(bounded) <= 6000
   ```
 
-- [ ] **Step 6: Implement the card and the command**
+- [x] **Step 6: Implement the card and the command**
 
   ```python
   RECALL_FIELD_CHARS = 800
@@ -986,11 +986,11 @@ caller.
       )
   ```
 
-- [ ] **Step 7: Run both suites**
+- [x] **Step 7: Run both suites**
 
   Expected: **26** `ok` and **8** `ok`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
   ```bash
   git add core/storage.py core/pipeline.py channels/discord_bot.py tests/test_core.py tests/test_cards.py

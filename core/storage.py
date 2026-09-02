@@ -167,6 +167,11 @@ def _embed_text(entry: LoggedEntry) -> str:
     return "\n".join(p for p in parts if p)
 
 
+def embeddings_enabled() -> bool:
+    """Whether semantic search has a configured embedding provider."""
+    return bool(os.getenv("EMBEDDING_API_KEY"))
+
+
 async def embed(text: str) -> Optional[list[float]]:
     """Return an embedding, or None when embeddings are not configured.
 
