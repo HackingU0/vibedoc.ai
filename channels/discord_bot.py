@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from core import pipeline
 from core.inbox import Coalescer
+from core.schema import STAGE_ORDER
 
 load_dotenv()
 log = logging.getLogger(__name__)
@@ -27,6 +28,13 @@ GUILD_ID = os.getenv("DISCORD_GUILD_ID", "").strip()
 # reaction is how you acknowledge without talking. Absence of one is also
 # information: chitchat never gets it, so triage is visible at a glance.
 CAPTURED = "📓"
+
+# Cards shown per column before the rest are rolled into a "+N more" line.
+# Discord caps a field value at 1024 characters and the whole embed at 6000;
+# blowing either is an HTTP 400, not a graceful degrade.
+# ponytail: a flat cap, not a character budget. Ten cards is roughly 400
+# characters — measure before making it cleverer.
+BOARD_MAX_CARDS = 10
 
 # The four fields a design record is judged on, in reading order. Matches
 # exporters/notebook.py's SECTIONS — the notebook and the receipt must never
@@ -116,6 +124,50 @@ def _status_card(result) -> discord.Embed:
     return embed
 
 
+def _board_card(board) -> discord.Embed:
+    """The board as stage columns, with team names carried on each card."""
+    columns = {stage: [] for stage in STAGE_ORDER}
+    for team, lane in board.lanes.items():
+        for stage in STAGE_ORDER:
+            columns[stage].extend((team, span) for span in lane.get(stage, []))
+
+    if not any(columns.values()):
+        return discord.Embed(
+            title="Nothing on the go",
+            description="No design work logged in the last week.",
+            colour=discord.Colour.greyple(),
+        )
+
+    visible = [cards for cards in columns.values() if cards]
+    embed = discord.Embed(
+        title="Board",
+        colour=(
+            discord.Colour.green()
+            if all(any(span.is_open for _, span in cards) for cards in visible)
+            else discord.Colour.orange()
+        ),
+    )
+    one_team = len(board.lanes) == 1
+    for stage, cards in columns.items():
+        if not cards:
+            continue
+        cards.sort(key=lambda item: (item[1].is_open, item[1].last_at), reverse=True)
+        lines = [
+            f"{'●' if span.is_open else '○'} {span.component or 'Unfiled'} "
+            f"— {span.author or '—'}{'' if one_team else f' · {team}'}"
+            for team, span in cards[:BOARD_MAX_CARDS]
+        ]
+        if len(cards) > BOARD_MAX_CARDS:
+            lines.append(f"+{len(cards) - BOARD_MAX_CARDS} more")
+        embed.add_field(name=stage.value, value="\n".join(lines), inline=True)
+
+    empty = [stage.value for stage, cards in columns.items() if not cards]
+    footer = [f"nothing yet in: {', '.join(empty)}"] if empty else []
+    footer.append(f"last 7 days · <t:{int(board.since.timestamp())}:R>")
+    embed.set_footer(text=" · ".join(footer))
+    return embed
+
+
 async def _receipt_reaction(message: discord.Message) -> None:
     """Mark a message as captured. Never allowed to break the capture itself."""
     try:
@@ -191,6 +243,12 @@ class Bot(discord.Client):
                 channel="discord", author=interaction.user.display_name
             )
             await interaction.followup.send(embed=_status_card(result), ephemeral=True)
+
+        @self.tree.command(name="board", description="Who is on what right now")
+        async def _board(interaction: discord.Interaction):
+            await interaction.response.defer(thinking=True, ephemeral=True)
+            result = await pipeline.board(channel="discord")
+            await interaction.followup.send(embed=_board_card(result), ephemeral=True)
 
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
