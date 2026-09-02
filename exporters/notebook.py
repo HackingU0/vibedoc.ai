@@ -24,17 +24,7 @@ from datetime import datetime, tzinfo
 
 from core.followup import thread_gaps
 from core.progress import spans
-from core.schema import LoggedEntry, Stage
-
-# Reading order of the design cycle — used to show a thread's arc compactly.
-STAGE_ORDER = [
-    Stage.PROBLEM,
-    Stage.IDEATION,
-    Stage.DECISION,
-    Stage.BUILD,
-    Stage.TEST,
-    Stage.REFLECTION,
-]
+from core.schema import LoggedEntry, STAGE_ORDER, Stage
 
 # Content fields, in the order a notebook entry reads best.
 SECTIONS = [

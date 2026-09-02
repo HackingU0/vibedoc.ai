@@ -24,8 +24,8 @@ Two decisions worth knowing before reading the code:
 from datetime import datetime, tzinfo
 
 from core.progress import UNTAGGED, by_team_and_stage, spans
-from core.schema import LoggedEntry, Stage
-from exporters.notebook import STAGE_ORDER, UNFILED
+from core.schema import LoggedEntry, STAGE_ORDER, Stage
+from exporters.notebook import UNFILED
 
 LIVE, IDLE = "●", "○"
 
@@ -86,4 +86,3 @@ def render_board(
 
     out.append("")
     return "\n".join(out)
-

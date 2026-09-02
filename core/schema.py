@@ -32,6 +32,13 @@ class Stage(str, Enum):
             return cls.IDEATION
         return None
 
+
+# Reading order of the design cycle. Not the enum's declaration order by
+# accident — it IS the enum's order, and this constant exists so the two can
+# never drift and so UNKNOWN is excluded in exactly one place.
+STAGE_ORDER = [s for s in Stage if s is not Stage.UNKNOWN]
+
+
 class Subteam(str, Enum):
     MECHANICAL = "mechanical"
     SOFTWARE = "software"
