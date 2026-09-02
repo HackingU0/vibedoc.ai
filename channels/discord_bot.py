@@ -163,8 +163,13 @@ def _board_card(board) -> discord.Embed:
 
     empty = [stage.value for stage, cards in columns.items() if not cards]
     footer = [f"nothing yet in: {', '.join(empty)}"] if empty else []
-    footer.append(f"last 7 days · <t:{int(board.since.timestamp())}:R>")
+    footer.append(f"last {pipeline.BOARD_WINDOW.days} days")
     embed.set_footer(text=" · ".join(footer))
+    # Not <t:...> in the footer text: Discord parses markdown in descriptions
+    # and field values, and nowhere else — a tag there reaches the reader
+    # verbatim. embed.timestamp is the native slot and is localised per
+    # viewer, which is what the tag was reaching for.
+    embed.timestamp = board.since
     return embed
 
 

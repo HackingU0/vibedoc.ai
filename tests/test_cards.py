@@ -44,6 +44,20 @@ def test_empty_board():
     assert not embed.fields, "an empty board is a sentence, not a grid"
 
 
+def test_footer_is_plain_text():
+    """Discord renders markdown in descriptions and field values. Not here.
+
+    A `<t:...>` tag in footer text reaches the reader as those exact
+    characters, so the window goes on embed.timestamp instead, which Discord
+    does localise (gotcha 8 is an export problem — this surface has no
+    TEAM_TZ).
+    """
+    embed = _board_card(Board({ANDROMEDA: {Stage.BUILD: [S("intake")]}}, SINCE))
+    assert "<t:" not in embed.footer.text, "footer text is never parsed"
+    assert f"last {BOARD_WINDOW.days} days" in embed.footer.text
+    assert embed.timestamp == SINCE
+
+
 def test_columns_are_stages_in_cycle_order():
     board = Board(
         {ANDROMEDA: {
