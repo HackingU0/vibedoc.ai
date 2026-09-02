@@ -18,6 +18,7 @@ from core.followup import apply_patch as _apply_patch
 from core.inbox import Coalescer
 from core.progress import UNTAGGED, by_team_and_stage, current, spans
 from core.schema import (
+    STAGE_ORDER,
     DesignRecord,
     FollowupPatch,
     FollowupTurn,
@@ -27,7 +28,7 @@ from core.schema import (
 )
 from exporters.kanban import IDLE as QUIET
 from exporters.kanban import LIVE, render_board
-from exporters.notebook import STAGE_ORDER, UNFILED, render_notebook
+from exporters.notebook import UNFILED, render_notebook
 from tests.samples import SAMPLES
 
 
@@ -739,4 +740,3 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
             print(f"ok  {name}")
-
