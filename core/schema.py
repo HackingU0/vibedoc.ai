@@ -38,6 +38,14 @@ class Stage(str, Enum):
 # never drift and so UNKNOWN is excluded in exactly one place.
 STAGE_ORDER = [s for s in Stage if s is not Stage.UNKNOWN]
 
+# Display bin for entries whose component was not recorded.
+UNFILED = "Unfiled"
+
+
+def thread_key(component: Optional[str]) -> str:
+    """Fold a component exactly like storage's generated component key."""
+    return (component or "").strip().lower()
+
 
 class Subteam(str, Enum):
     MECHANICAL = "mechanical"

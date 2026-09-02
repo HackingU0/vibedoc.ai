@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Optional
 
 from dotenv import load_dotenv
 
-from .schema import Stage
+from .schema import Stage, thread_key
 
 if TYPE_CHECKING:
     from .schema import LoggedEntry
@@ -43,8 +43,8 @@ IDLE = timedelta(minutes=int(os.getenv("TASK_IDLE_MINUTES", "60")))
 
 
 # Authors with no team label land here. A bin, not a team — it sorts last.
-# Deliberately not "Unfiled": exporters/notebook.py already uses that word for
-# a record with no component, and a board cell reading "Unfiled · Unfiled"
+# Deliberately not `Unfiled`: that bin already names a missing component, and
+# a board cell reading "Unfiled · Unfiled"
 # hides which of the two is actually missing. This one names the fix.
 UNTAGGED = "No tag"
 
@@ -105,13 +105,8 @@ class Span:
 
 
 def _key(entry: "LoggedEntry") -> tuple[Optional[str], str]:
-    """Author plus the folded component.
-
-    The fold is character-for-character the one core/storage.py applies to its
-    `component_key` generated column, so a span and a design thread can never
-    disagree about whether "Intake" and "intake" are the same work.
-    """
-    return entry.author, (entry.record.component or "").strip().lower()
+    """Author plus the folded component."""
+    return entry.author, thread_key(entry.record.component)
 
 
 def spans(

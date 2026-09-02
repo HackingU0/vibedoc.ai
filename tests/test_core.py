@@ -19,6 +19,7 @@ from core.inbox import Coalescer
 from core.progress import UNTAGGED, by_team_and_stage, current, spans
 from core.schema import (
     STAGE_ORDER,
+    UNFILED,
     DesignRecord,
     FollowupPatch,
     FollowupTurn,
@@ -28,7 +29,7 @@ from core.schema import (
 )
 from exporters.kanban import IDLE as QUIET
 from exporters.kanban import LIVE, render_board
-from exporters.notebook import UNFILED, render_notebook
+from exporters.notebook import render_notebook
 from tests.samples import SAMPLES
 
 
@@ -41,6 +42,14 @@ def R(**kw):
 def E(day, record, **kw):
     return LoggedEntry(raw_text="x", record=record,
                        created_at=datetime(2025, 10, day, 3, 0, tzinfo=timezone.utc), **kw)
+
+
+def test_thread_key_folds_the_way_storage_does():
+    from core.schema import UNFILED, thread_key
+
+    assert thread_key("Intake") == thread_key("  intake ") == "intake"
+    assert thread_key(None) == thread_key("   ") == ""
+    assert UNFILED == "Unfiled"
 
 
 def test_patch_gate():

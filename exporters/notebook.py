@@ -24,7 +24,7 @@ from datetime import datetime, tzinfo
 
 from core.followup import thread_gaps
 from core.progress import spans
-from core.schema import LoggedEntry, STAGE_ORDER, Stage
+from core.schema import UNFILED, LoggedEntry, STAGE_ORDER, Stage, thread_key
 
 # Content fields, in the order a notebook entry reads best.
 SECTIONS = [
@@ -33,9 +33,6 @@ SECTIONS = [
     ("rationale", "Why"),
     ("test_evidence", "Results"),
 ]
-
-UNFILED = "Unfiled"
-
 
 def _date(dt: datetime, tz: tzinfo | None = None) -> str:
     """Format an entry date in the team's own timezone.
@@ -50,8 +47,7 @@ def _date(dt: datetime, tz: tzinfo | None = None) -> str:
 
 
 def _thread_key(entry: LoggedEntry) -> str:
-    component = (entry.record.component or "").strip()
-    return component.lower() if component else UNFILED.lower()
+    return thread_key(entry.record.component) or UNFILED.lower()
 
 
 def _group(entries: list[LoggedEntry]) -> dict[str, list[LoggedEntry]]:

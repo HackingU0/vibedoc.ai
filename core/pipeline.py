@@ -18,7 +18,7 @@ from typing import Literal, Optional
 
 from . import followup, progress, storage, triage
 from .agent import apply_followup_answer, apply_peer_contribution, log_session, parse_design_record
-from .schema import LoggedEntry, Stage
+from .schema import LoggedEntry, Stage, thread_key
 
 log = logging.getLogger(__name__)
 
@@ -310,10 +310,10 @@ async def status(*, channel: str, author: Optional[str]) -> Status:
     # Gaps are the whole component thread's, including other people's entries:
     # "is this design line judge-ready" is a question about the line, not about
     # who typed which part of it.
-    key = (span.component or "").strip().lower()
+    key = thread_key(span.component)
     thread = [
         e for e in entries
-        if (e.record.component or "").strip().lower() == key
+        if thread_key(e.record.component) == key
     ]
     return Status(span, frozenset(followup.thread_gaps(thread)), len(thread))
 

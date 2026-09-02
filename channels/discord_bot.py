@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from core import pipeline
 from core.inbox import Coalescer
-from core.schema import STAGE_ORDER
+from core.schema import STAGE_ORDER, UNFILED
 
 load_dotenv()
 log = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ def _status_card(result) -> discord.Embed:
 
     span = result.span
     embed = discord.Embed(
-        title=span.component or "Unfiled",
+        title=span.component or UNFILED,
         description=f"{result.entries} entr{'y' if result.entries == 1 else 'ies'} "
                     f"in this design thread",
         colour=discord.Colour.orange() if result.gaps else discord.Colour.green(),
@@ -153,7 +153,7 @@ def _board_card(board) -> discord.Embed:
             continue
         cards.sort(key=lambda item: (item[1].is_open, item[1].last_at), reverse=True)
         lines = [
-            f"{'●' if span.is_open else '○'} {span.component or 'Unfiled'} "
+            f"{'●' if span.is_open else '○'} {span.component or UNFILED} "
             f"— {span.author or '—'}{'' if one_team else f' · {team}'}"
             for team, span in cards[:BOARD_MAX_CARDS]
         ]

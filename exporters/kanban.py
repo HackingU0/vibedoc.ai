@@ -24,8 +24,7 @@ Two decisions worth knowing before reading the code:
 from datetime import datetime, tzinfo
 
 from core.progress import UNTAGGED, by_team_and_stage, spans
-from core.schema import LoggedEntry, STAGE_ORDER, Stage
-from exporters.notebook import UNFILED
+from core.schema import UNFILED, LoggedEntry, STAGE_ORDER, Stage
 
 LIVE, IDLE = "●", "○"
 

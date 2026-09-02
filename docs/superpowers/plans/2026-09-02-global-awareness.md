@@ -230,7 +230,7 @@ Same argument as `STAGE_ORDER` last week: the third consumer earns the move.
 - Produces: `core.schema.thread_key(component: Optional[str]) -> str` and
   `core.schema.UNFILED: str`. Every later task uses both.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
   In `tests/test_core.py`, beside the other pure checks:
 
@@ -249,7 +249,7 @@ Same argument as `STAGE_ORDER` last week: the third consumer earns the move.
       assert UNFILED == "Unfiled"
   ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
   ```bash
   LLM_API_KEY=dummy uv run python -m tests.test_core
@@ -257,7 +257,7 @@ Same argument as `STAGE_ORDER` last week: the third consumer earns the move.
 
   Expected: `ImportError: cannot import name 'thread_key' from 'core.schema'`.
 
-- [ ] **Step 3: Add both to `core/schema.py`**
+- [x] **Step 3: Add both to `core/schema.py`**
 
   Below `STAGE_ORDER`:
 
@@ -286,7 +286,7 @@ Same argument as `STAGE_ORDER` last week: the third consumer earns the move.
 
   `Optional` is already imported in `schema.py`.
 
-- [ ] **Step 4: Repoint every caller**
+- [x] **Step 4: Repoint every caller**
 
   1. `core/progress.py` — `_key()` becomes
      `return entry.author, thread_key(entry.record.component)`, importing
@@ -316,7 +316,7 @@ Same argument as `STAGE_ORDER` last week: the third consumer earns the move.
      render_notebook` becomes `from exporters.notebook import render_notebook`,
      and `UNFILED` joins the `core.schema` import.
 
-- [ ] **Step 5: Run everything**
+- [x] **Step 5: Run everything**
 
   ```bash
   LLM_API_KEY=dummy uv run python -m tests.test_core
@@ -333,7 +333,7 @@ Same argument as `STAGE_ORDER` last week: the third consumer earns the move.
 
   Expected: one hit, the definition in `core/schema.py`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   ```bash
   git add core/schema.py core/progress.py core/pipeline.py core/storage.py \

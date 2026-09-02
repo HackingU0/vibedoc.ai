@@ -25,7 +25,7 @@ from typing import Optional
 import asyncpg
 from dotenv import load_dotenv
 
-from .schema import DesignRecord, LoggedEntry, Stage
+from .schema import DesignRecord, LoggedEntry, Stage, thread_key
 
 log = logging.getLogger(__name__)
 
@@ -292,7 +292,7 @@ async def list_thread(
     Tuesday. Entries with no component share the "unfiled" bucket, which is
     loose enough that the caller should treat a hit there as weak evidence.
     """
-    key = (component or "").strip().lower()
+    key = thread_key(component)
     async with (await pool()).acquire() as conn:
         rows = await conn.fetch(
             f"""SELECT {_COLUMNS} FROM entries
