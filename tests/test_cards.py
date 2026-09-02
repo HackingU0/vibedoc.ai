@@ -100,6 +100,18 @@ def test_long_column_rolls_up():
     assert len(value.splitlines()) == BOARD_MAX_CARDS + 1
 
 
+def test_field_value_stays_under_discords_cap():
+    """1024 characters per field value. Over it, Discord answers HTTP 400 and
+    the whole command dies — the card does not degrade, it disappears.
+
+    BOARD_MAX_CARDS counts cards, and a component is whatever the model
+    pulled out of a Discord message, so cards alone cannot bound the string.
+    """
+    cards = [S("swerve module bearing retainer " * 10) for _ in range(BOARD_MAX_CARDS)]
+    embed = _board_card(Board({ANDROMEDA: {Stage.BUILD: cards}}, SINCE))
+    assert len(embed.fields[0].value) <= 1024
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

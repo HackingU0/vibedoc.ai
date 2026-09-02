@@ -159,7 +159,14 @@ def _board_card(board) -> discord.Embed:
         ]
         if len(cards) > BOARD_MAX_CARDS:
             lines.append(f"+{len(cards) - BOARD_MAX_CARDS} more")
-        embed.add_field(name=stage.value, value="\n".join(lines), inline=True)
+        # ponytail: a blunt slice. Discord counts characters, not cards, and
+        # over 1024 it answers HTTP 400 for the whole embed rather than
+        # dropping a field — a line cut mid-word beats a dead command. Spend
+        # a real character budget here only if long components turn out
+        # common in the channel.
+        embed.add_field(
+            name=stage.value, value="\n".join(lines)[:1024], inline=True
+        )
 
     empty = [stage.value for stage, cards in columns.items() if not cards]
     footer = [f"nothing yet in: {', '.join(empty)}"] if empty else []
