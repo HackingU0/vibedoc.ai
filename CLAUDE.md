@@ -41,7 +41,7 @@ friction is too high, nothing else matters.
 
 ## 3. MVP scope
 
-### In scope — three ways in, one record out
+### In scope — three ways in, five views out
 
 ```
 ambient   any message in the channel   ┐
@@ -53,12 +53,17 @@ ambient   any message in the channel   ┐
 reply     an answer to the bot's       ┘
           question                     → merge back, then maybe ask the next gap
 
+                                       → /status · /board · /digest · /ask
                                        → export to notebook markdown
 ```
 
 The three entry points are `core/agent.py`'s three public functions:
 `parse_design_record` / `log_session` / `apply_followup_answer`. They share one
 model and one schema and differ only in prompt — see §8.
+
+`/ask` is the in-scope vector-search seam over the team's own records.
+`/digest` is arithmetic over captured threads, just as `progress.py` is
+arithmetic over work spans; neither creates or edits work.
 
 The reply path is not optional polish. Without it the bot asks a good question,
 someone answers it, the answer is parsed as a fresh junk record, and the hole it
@@ -123,6 +128,7 @@ DiscordFTCAgent/
 │   ├── inbox.py               # burst coalescing
 │   ├── followup.py            # merge gate + multi-round stop policy
 │   ├── progress.py            # who is on what, derived — see docs/design/
+│   ├── digest.py              # what the season still needs, derived
 │   ├── pipeline.py            # ingest + read policy — the only caller of all of core
 │   ├── storage.py             # memory: postgres + pgvector
 │   └── prompts/               # kept out of .py on purpose — see §8
@@ -428,18 +434,17 @@ it aloud — it should sound like a teammate.
 ### The other tests
 
 `python -m tests.test_core` — pure logic, no API, no DB, no framework. Covers
-the merge and stop gates, per-thread gaps, the envelope, triage, coalescing, and
-optional-embedding failure boundaries. Run it after touching `apply_patch`,
-`exporters/`, or ingest policy. It says nothing about prompt quality — that is
-what the scoring loops are for.
+the merge and stop gates, per-thread gaps and health, recall/recap policy, the
+envelope, triage, coalescing, and optional-embedding failure boundaries. Run it
+after touching `apply_patch`, `exporters/`, or ingest policy. It says nothing
+about prompt quality — that is what the scoring loops are for.
 
 `python -m tests.test_cards` — the same idea for the Discord cards, in its own
-file because it imports `discord` and `test_core.py` may not. It builds a
-`pipeline.Board` by hand and asserts on the embed `_board_card` returns:
-column order, dropped-and-footnoted empty stages, the single-lane team-suffix
-rule, the `+N more` roll-up, plain-text footer, and the 1024-character field
-cap. It says nothing about how the card *looks* — that is the live checklist
-in `docs/running-the-bot.md` §7g.
+file because it imports `discord` and `test_core.py` may not. It builds the
+pipeline read models by hand and checks the `/log`, `/board`, `/digest`, `/ask`
+and recap embeds, including Discord's field and total-size limits. It says
+nothing about how the cards *look* — that is the live checklist in
+`docs/running-the-bot.md` §7.
 
 ---
 
@@ -454,6 +459,9 @@ Working and verified locally:
 - **`core/progress.py`** — per-person work spans, derived from entries with no
   extra model call. Two consumers: `pipeline._question_for`'s one-question-
   per-task gate and the notebook's session timeline. Pure and unit-tested.
+- **`core/digest.py`** — whole-season component health, derived with no model
+  call or persistence. Complete, almost-ready, never-tested, and stale status
+  all come from stages, thread coverage, and timestamps already stored.
 - **`core/agent.py`** — all three entry points. API connectivity is fine; the
   §6 wiring works.
 - **four prompts** in `core/prompts/`
@@ -483,20 +491,23 @@ Written and checked offline, but **never run against real Discord**:
 
 - **Capture receipts and read commands** — a 📓 reaction acknowledges every
   captured message and every merged reply without posting; `/log` returns an
-  embed card showing the *thread's* coverage; `/status` answers "what am I on"
-  and `/board` answers "who is on what" ephemerally. `tests/test_cards.py`
-  checks the card's structure offline (6 checks) and `tests/test_core.py` the
-  policy behind it (22); no live Discord card, command sync, desktop/mobile
-  layout, or ephemeral visibility check has been run.
+  embed card showing the *thread's* coverage and related earlier work;
+  `/status`, `/board`, `/digest`, and `/ask` are ephemeral read views. The
+  opt-in session recap is the only unprompted post. `tests/test_cards.py`
+  checks card structure offline (10 checks) and `tests/test_core.py` the policy
+  behind it (28); no live Discord card, command sync, desktop/mobile layout,
+  timer, embedding call, or ephemeral visibility check has been run.
 - **`core/pipeline.py`**, **`core/inbox.py`**, and **`core/triage.py`** — the
-  ingest policy, read-command policy, burst coalescer, thread gate, and
-  open-question budget. Their pieces have tests or real-DB checks, but timing
-  and policy have not run under real Discord traffic.
+  ingest policy, read-command policy, burst/session coalescers, thread gate,
+  and open-question budget. Their pieces have tests or real-DB checks, but
+  timing and policy have not run under real Discord traffic.
 - **`channels/discord_bot.py`** — `on_message` sends ambient bursts through the
   coalescer and routes replies to pipeline; `/log` sends deliberate text to the
-  same pipeline; `/status` and `/board` render its read models. Imports and
+  same pipeline; `/status`, `/board`, `/digest`, and `/ask` render its read
+  models, and the opt-in quiet timer posts session recaps. Imports and
   type-checks; everything about the live path — intents, command sync, modal
-  timeout, reply resolution, and embed appearance — remains untested.
+  timeout, reply resolution, timer behavior, and embed appearance — remains
+  untested.
 - `DISCORD_CHANNELS` (env, comma-separated) limits which channels are parsed.
   Empty means every channel the bot can see, with at most one LLM call per
   ambient burst after triage.
@@ -535,6 +546,14 @@ Two findings worth keeping:
   history. Too small fragments one task into five spans; too large collapses a
   whole meeting into one. Settle it the way §9 settles everything else — with
   real messages, not invented ones.
+- `DIGEST_STALE_DAYS` (default 10) and `SESSION_IDLE_MINUTES` (default 90) are
+  also unmeasured. Tune them only against real season and meeting history.
+- `/ask` returns no hits until `EMBEDDING_API_KEY` is configured. Its disabled
+  card is checked offline, but no search has been exercised through Discord.
+- `LoggedEntry.channel` stores `"discord"`, not a Discord channel id. With
+  multiple listened channels, read commands aggregate them and each channel's
+  session timer reads the same rows. One listened channel remains the v1
+  assumption; fixing it requires a schema change.
 - `session_log.md` normalises the team's wording slightly ("adding compliant
   wheels" → "compliant wheels"), a mild violation of hard rule 3. Tunable, but
   not before real transcripts replace the invented baseline.

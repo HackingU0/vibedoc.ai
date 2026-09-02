@@ -1426,16 +1426,16 @@ on the one path that produces a fresh entry, and the unit under test is
 
 ## Task 7: docs
 
-- [ ] **Step 1: `CLAUDE.md` §3** — under "In scope", the three ways in are now
+- [x] **Step 1: `CLAUDE.md` §3** — under "In scope", the three ways in are now
   three ways in and **five** ways out (`/status`, `/board`, `/digest`, `/ask`,
   notebook). Add one line noting that `/ask` is the vector-search seam the
   section already rules in, and that the season digest is derived, never
   authored — the same side of the task-management line as `progress.py`.
 
-- [ ] **Step 2: `CLAUDE.md` §4 file tree** — add `core/digest.py` with a
+- [x] **Step 2: `CLAUDE.md` §4 file tree** — add `core/digest.py` with a
   one-line description beside `core/progress.py`.
 
-- [ ] **Step 3: `CLAUDE.md` §10** — move `/digest`, `/ask`, the `/log`
+- [x] **Step 3: `CLAUDE.md` §10** — move `/digest`, `/ask`, the `/log`
   "Related earlier" field and the session recap into "written and checked
   offline, never run against real Discord", with the check counts (28 / 10).
   Add to **Known defects**: `DIGEST_STALE_DAYS` is unmeasured for the same
@@ -1443,7 +1443,7 @@ on the one path that produces a fresh entry, and the unit under test is
   `EMBEDDING_API_KEY` is set — which no live run has ever exercised, since the
   bot has never connected.
 
-- [ ] **Step 4: `docs/running-the-bot.md`** — §7 gains `h. /digest`, `i. /ask`
+- [x] **Step 4: `docs/running-the-bot.md`** — §7 gains `h. /digest`, `i. /ask`
   and `j. the session recap`, and §9's checklist gains four lines:
 
   ```markdown
@@ -1454,7 +1454,7 @@ on the one path that produces a fresh entry, and the unit under test is
         none at all when nothing was missing
   ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add CLAUDE.md docs/running-the-bot.md

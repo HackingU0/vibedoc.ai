@@ -104,9 +104,12 @@ Optional, all have working defaults — see `.env.example` for the full list:
 | `FOLLOWUP_MAX_ROUNDS` | 3 | hard ceiling on follow-up rounds per record |
 | `MAX_OPEN_QUESTIONS` | 2 | unanswered questions allowed in one channel at once |
 | `TASK_IDLE_MINUTES` | 60 | quiet gap that ends a work span (`core/progress.py`) |
+| `DIGEST_STALE_DAYS` | 10 | untouched days before `/digest` calls an incomplete thread stale |
+| `EMBEDDING_API_KEY` | unset | enables `/ask` and related-history search |
+| `SESSION_RECAP` | off | permits one public recap after a quiet session |
+| `SESSION_IDLE_MINUTES` | 90 | quiet gap that ends a session |
 
-> `TASK_IDLE_MINUTES` is missing from `.env.example` — the progress-tracker
-> work added the knob and never listed it. The default applies either way.
+Leave `SESSION_RECAP=off` until the normal capture path is trusted.
 
 ---
 
@@ -118,9 +121,16 @@ Cheapest failures first.
 uv run python -m tests.test_core
 ```
 
-Expected: 22 lines of `ok`. Three tracebacks scroll past on the way —
+Expected: 28 lines of `ok`. Three tracebacks scroll past on the way —
 `downstream exploded` and `embedding API is down` are deliberately raised by
 tests that check those failures are handled. Only the `ok` lines matter.
+
+```bash
+uv run python -m tests.test_cards
+```
+
+Expected: 10 lines of `ok`. These inspect card structure without connecting to
+Discord; layout and visibility still need the live checks below.
 
 ```bash
 uv run python -m scripts.Smoke
@@ -135,26 +145,16 @@ almost never the key itself.
 
 ## 5. Slash-command sync
 
-`setup_hook` calls `self.tree.sync()`, which is a **global** sync. Discord can
-take up to an hour to show a globally-synced command. For a test run that is
-unusable.
+`setup_hook` uses a global sync by default, which can take up to an hour to
+show a new command. For an instant test-server sync, add this to `.env` and
+restart:
 
-Before the first run, edit `channels/discord_bot.py:76` from
-
-```python
-        await self.tree.sync()
+```bash
+DISCORD_GUILD_ID=<your test server id>
 ```
 
-to
-
-```python
-        guild = discord.Object(id=<your test server id>)
-        self.tree.copy_global_to(guild=guild)
-        await self.tree.sync(guild=guild)
-```
-
-Guild-scoped syncs are instant. Revert it before the bot goes near the real
-team server. (Server id: right-click the server icon → Copy Server ID.)
+Remove it before the bot goes near the real team server. Get the id by
+right-clicking the server icon and choosing **Copy Server ID**.
 
 If you would rather not edit code, skip `/log` on this run and test the ambient
 and reply paths only — they need no sync.
@@ -180,7 +180,7 @@ thing said before you quit still gets parsed.
 
 ## 7. What to actually type in the channel
 
-Seven paths. Do them in this order.
+Ten paths. Do them in this order.
 
 ### a. One design message → one record
 
@@ -239,6 +239,9 @@ ephemeral "only you can see this". Ephemeral messages cannot be replied to,
 which would strand every follow-up (`CLAUDE.md` §6 gotcha 7). If the receipt is
 ephemeral, that is a bug — stop and report it.
 
+With `EMBEDDING_API_KEY` configured and related work in another component,
+expect a short **Related earlier** field. It must not repeat the current thread.
+
 ### f. `/status`
 
 Run `/status` after logging some work, then run it from an account with no work
@@ -262,6 +265,26 @@ The footer names the empty stages and the window; the date beside it is
 the field-length cap are covered offline by `tests/test_cards.py` — do not
 edit `BOARD_MAX_CARDS` mid-session to see them, that is how a temporary edit
 gets committed.
+
+### h. `/digest`
+
+Run `/digest` after the notebook has at least one complete thread and one with
+holes. Expect an ephemeral card whose missing fields agree with the notebook's
+coverage table. A thread appears in at most one bucket.
+
+### i. `/ask`
+
+Set `EMBEDDING_API_KEY`, restart, and ask for wording you know exists in a
+stored record. Expect ephemeral hits with dates and similarity scores. With
+the key unset, expect a clear "not configured" card rather than an empty-search
+claim.
+
+### j. Session recap
+
+In the throwaway server, set `SESSION_RECAP=on` and temporarily shorten
+`SESSION_IDLE_MINUTES`, then restart. Log at least two entries with a missing
+field and wait through the quiet window. Expect exactly one public recap. A
+fresh session whose touched threads are complete should produce no recap.
 
 ---
 
@@ -340,6 +363,10 @@ For this run, success is narrower:
 - [ ] a captured message got a 📓 and chitchat did not
 - [ ] `/status` returned a card only you could see
 - [ ] `/board` matched `scripts.kanban`, named empty stages, and was visible only to you
+- [ ] `/digest` named the same holes the notebook's coverage table shows
+- [ ] `/ask` found something known to be in the notebook (`EMBEDDING_API_KEY` required)
+- [ ] a `/log` receipt showed "Related earlier" from a different component
+- [ ] with `SESSION_RECAP=on`, exactly one recap appeared after an incomplete session and none after a complete one
 - [ ] the terminal shows no `dropping message` lines
 
 Anything failing above is a runtime bug in `channels/discord_bot.py`, which has
