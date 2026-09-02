@@ -183,6 +183,32 @@ def test_recall_card_separates_off_from_empty():
     assert len(bounded) <= 6000
 
 
+def test_log_card_lists_related_work():
+    from channels.discord_bot import _card
+    from core.pipeline import Ingested
+    from core.schema import DesignRecord, LoggedEntry, Subteam
+
+    def entry(component, title):
+        return LoggedEntry(
+            raw_text="x", author="Eli", created_at=NOW,
+            record=DesignRecord(
+                stage=Stage.BUILD, subteam=Subteam.MECHANICAL,
+                title=title, summary="s", component=component,
+                confidence=0.5,
+            ),
+        )
+
+    current = entry("intake", "dual roller intake")
+    related = entry("wheels", "tried compliant wheels")
+    card = _card(Ingested(current, related=[related]))
+    field = next(item for item in card.fields if item.name == "Related earlier")
+    assert "wheels" in field.value and "tried compliant wheels" in field.value
+    assert len(field.value) <= 1024
+    assert "Related earlier" not in {
+        item.name for item in _card(Ingested(current)).fields
+    }
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

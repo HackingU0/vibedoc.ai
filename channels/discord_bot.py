@@ -88,6 +88,15 @@ def _card(result) -> discord.Embed:
     embed.add_field(name="Stage", value=record.stage.value)
     embed.add_field(name="Subteam", value=record.subteam.value)
     embed.add_field(name="Component", value=record.component or "—")
+    if result.related:
+        embed.add_field(
+            name="Related earlier",
+            value="\n".join(
+                f"**{entry.record.component or UNFILED}** — {entry.record.title}"
+                for entry in result.related
+            )[:1024],
+            inline=False,
+        )
     embed.add_field(
         name="This design thread so far",
         value=" · ".join(

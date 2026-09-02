@@ -12,7 +12,7 @@ is why adding a web channel later is a zero-change operation on core/.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
@@ -49,6 +49,7 @@ class Ingested:
     # results are spread over three entries is complete; rendering per-entry
     # holes reports it as broken and sends the team chasing nothing (§10).
     gaps: frozenset[str] = frozenset()
+    related: list[LoggedEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -105,6 +106,22 @@ async def _respond(entry: LoggedEntry) -> Ingested:
         question=await _question_for(entry, thread),
         gaps=frozenset(followup.thread_gaps(thread)),
     )
+
+
+async def _prior_work(entry: LoggedEntry, limit: int = 2) -> list[LoggedEntry]:
+    """Similar records from other threads, only for a deliberate /log."""
+    if entry.source != "log" or not entry.record.title:
+        return []
+
+    key = thread_key(entry.record.component)
+    # ponytail: over-fetch three. Add storage-side exclusions only if dense
+    # same-thread history starts hiding useful cross-thread results.
+    hits = await storage.search(entry.record.title, limit=limit + 3)
+    return [
+        item for item, _ in hits
+        if item.entry_id != entry.entry_id
+        and thread_key(item.record.component) != key
+    ][:limit]
 
 
 async def ingest(
@@ -187,7 +204,9 @@ async def ingest(
         record=record,
     )
     await storage.save(entry)
-    return await _respond(entry)
+    result = await _respond(entry)
+    result.related = await _prior_work(entry)
+    return result
 
 
 async def handle_reply(

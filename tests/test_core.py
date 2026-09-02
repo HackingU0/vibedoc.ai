@@ -136,6 +136,35 @@ def test_recall_reports_disabled_embeddings_as_a_state():
     assert got.hits == [] and not got.enabled
 
 
+def test_prior_work_is_log_only_and_skips_the_current_thread():
+    from unittest.mock import AsyncMock
+
+    from core.pipeline import _prior_work
+
+    old = LoggedEntry(
+        raw_text="x", author="Kim",
+        record=R(component="wheels", title="tried compliant"),
+    )
+    same_thread = LoggedEntry(
+        raw_text="x", author="Eli",
+        record=R(component="Intake", title="earlier intake note"),
+    )
+    entry = LoggedEntry(
+        raw_text="x", author="Eli", source="log",
+        record=R(component="intake", title="dual roller"),
+    )
+
+    search = AsyncMock(return_value=[(entry, 1.0), (same_thread, 0.9), (old, 0.8)])
+    with patch.object(storage, "search", new=search):
+        got = asyncio.run(_prior_work(entry))
+    assert [item.entry_id for item in got] == [old.entry_id]
+
+    search.reset_mock()
+    with patch.object(storage, "search", new=search):
+        got = asyncio.run(_prior_work(entry.model_copy(update={"source": "ambient"})))
+    assert got == [] and not search.await_count
+
+
 def test_patch_gate():
     rec = R(missing_fields=["rationale"], followup_question="why?")
 

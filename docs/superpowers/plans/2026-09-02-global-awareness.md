@@ -1015,7 +1015,7 @@ follow-up round to a `/log` entry and thrown away. The call goes in `ingest()`,
 on the one path that produces a fresh entry, and the unit under test is
 `_prior_work()` itself.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
   In `tests/test_core.py`:
 
@@ -1049,11 +1049,11 @@ on the one path that produces a fresh entry, and the unit under test is
       assert got == [] and not search.await_count
   ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
   Expected: `ImportError: cannot import name '_prior_work' from 'core.pipeline'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
   In `core/pipeline.py`, add the field to `Ingested`:
 
@@ -1108,11 +1108,11 @@ on the one path that produces a fresh entry, and the unit under test is
 
   `thread_key` joins the `.schema` import line.
 
-- [ ] **Step 4: Run it and watch it pass**
+- [x] **Step 4: Run it and watch it pass**
 
   Run: `LLM_API_KEY=dummy uv run python -m tests.test_core` → **27** `ok`.
 
-- [ ] **Step 5: Render it on the receipt**
+- [x] **Step 5: Render it on the receipt**
 
   First add the card regression check in `tests/test_cards.py`:
 
@@ -1157,7 +1157,7 @@ on the one path that produces a fresh entry, and the unit under test is
           )
   ```
 
-- [ ] **Step 6: Run both suites and commit**
+- [x] **Step 6: Run both suites and commit**
 
   ```bash
   LLM_API_KEY=dummy uv run python -m tests.test_core
